@@ -17,7 +17,7 @@
 import type { ColumnDef } from "@tanstack/react-table";
 import { Info } from "lucide-react";
 import { remToPx } from "@/components/data-table/utils/column-sizing";
-import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/shadcn/tooltip";
+import { cn } from "@/lib/utils";
 import { formatDateTimeFull, formatDateTimeSuccinct } from "@/lib/format-date";
 import { formatBytes } from "@/lib/utils";
 import { MidTruncate } from "@/components/mid-truncate";
@@ -34,12 +34,9 @@ function getMinSize(id: DatasetColumnId): number {
   return col ? remToPx(col.minWidthRem) : 80;
 }
 
-export interface CreateDatasetColumnsOptions {
-  /** Called when the open-details button is clicked */
-  onOpenPanel: (dataset: Dataset) => void;
-}
-
-export function createDatasetColumns({ onOpenPanel }: CreateDatasetColumnsOptions): ColumnDef<Dataset, unknown>[] {
+export function createDatasetColumns(
+  onOpenDetails?: (bucket: string, name: string) => void,
+): ColumnDef<Dataset, unknown>[] {
   return [
     {
       id: "name",
@@ -48,28 +45,29 @@ export function createDatasetColumns({ onOpenPanel }: CreateDatasetColumnsOption
       minSize: getMinSize("name"),
       enableSorting: true,
       cell: ({ row }) => (
-        <span className="flex w-full min-w-0 items-center justify-between gap-2">
+        <div className="flex w-full min-w-0 items-center justify-between gap-2">
           <MidTruncate
             text={row.original.name}
             className="min-w-0 font-mono text-sm font-medium text-zinc-900 dark:text-zinc-100"
           />
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <button
-                type="button"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  onOpenPanel(row.original);
-                }}
-                className="shrink-0 rounded p-0.5 text-zinc-400 hover:text-zinc-600 dark:text-zinc-500 dark:hover:text-zinc-300"
-                aria-label={`Open details for ${row.original.name}`}
-              >
-                <Info className="size-3.5" />
-              </button>
-            </TooltipTrigger>
-            <TooltipContent>Open details</TooltipContent>
-          </Tooltip>
-        </span>
+          {onOpenDetails && (
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                onOpenDetails(row.original.bucket, row.original.name);
+              }}
+              className="shrink-0 rounded p-0.5 text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-200"
+              aria-label={`Open details for ${row.original.name}`}
+              title="Open details"
+            >
+              <Info
+                className="size-3.5"
+                aria-hidden="true"
+              />
+            </button>
+          )}
+        </div>
       ),
     },
     {
@@ -79,16 +77,17 @@ export function createDatasetColumns({ onOpenPanel }: CreateDatasetColumnsOption
       minSize: getMinSize("type"),
       enableSorting: true,
       cell: ({ row }) => {
-        if (row.original.type === DatasetType.COLLECTION) {
-          return (
-            <span className="inline-flex items-center rounded px-1.5 py-0.5 text-xs font-medium text-indigo-700 ring-1 ring-indigo-200 ring-inset dark:text-indigo-300 dark:ring-indigo-700">
-              Collection
-            </span>
-          );
-        }
+        const isCollection = row.original.type === DatasetType.COLLECTION;
         return (
-          <span className="inline-flex items-center rounded px-1.5 py-0.5 text-xs font-medium text-zinc-600 ring-1 ring-zinc-200 ring-inset dark:text-zinc-400 dark:ring-zinc-700">
-            Dataset
+          <span
+            className={cn(
+              "inline-flex items-center rounded px-1.5 py-0.5 text-xs font-medium ring-1 ring-inset",
+              isCollection
+                ? "text-indigo-700 ring-indigo-200 dark:text-indigo-300 dark:ring-indigo-700"
+                : "text-zinc-600 ring-zinc-200 dark:text-zinc-400 dark:ring-zinc-700",
+            )}
+          >
+            {isCollection ? "Collection" : "Dataset"}
           </span>
         );
       },
