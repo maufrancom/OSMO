@@ -88,8 +88,10 @@ export interface DatasetFile {
   checksum?: string;
   /** URL to access/preview the file (for public buckets) */
   url?: string;
-  /** S3 URI for this file (e.g., "s3://bucket/path/file.txt") */
-  s3Path?: string;
+  /** Path relative to the dataset root (e.g., "train/img1.jpg") */
+  relativePath?: string;
+  /** Storage path for this file (e.g., "s3://bucket/path/file.txt") */
+  storagePath?: string;
 }
 
 /**
@@ -104,6 +106,19 @@ export interface RawFileItem {
   storage_path?: string;
   /** Direct URL to access/download the file */
   url?: string;
+}
+
+/**
+ * Processed manifest — built once per location fetch, cached by React Query.
+ *
+ * - byPath: files sorted ascending by relative_path (enables binary-search directory listing)
+ * - byFilename: sorted by lowercase last-segment filename (enables binary-search filename filter)
+ * - fileTypes: sorted unique lowercase extensions (for future type filter)
+ */
+export interface ProcessedManifest {
+  byPath: RawFileItem[];
+  byFilename: readonly { name: string; item: RawFileItem }[];
+  fileTypes: readonly string[];
 }
 
 /**
@@ -442,34 +457,88 @@ export async function fetchDatasetDetail(bucket: string, name: string): Promise<
 }
 
 /**
- * Fetch all files for a dataset version from the version's location URL.
+ * Fetch dataset detail with tag=latest for lightweight initial load.
  *
- * The `location` field on a DatasetVersion points to a manifest URL that returns
- * a flat list of all files (with relative_path) for that version. Uses a Server
- * Action to fetch the manifest directly, avoiding the /api/* ingress routing
- * that sends those paths to the Python backend in production.
+ * For datasets: returns only the version tagged "latest" (1 version instead of all).
+ * For collections: tag is ignored server-side; returns all members (same as full call).
  *
- * Returns an empty array if no location URL is provided (dataset has no versions).
- *
- * @param location - The version's location URL (DatasetVersion.location)
+ * @param bucket - Bucket name
+ * @param name - Dataset name
  */
-export async function fetchDatasetFiles(location: string | null): Promise<RawFileItem[]> {
-  if (!location) return [];
-  const { fetchManifest } = await import("@/lib/api/server/dataset-actions");
-  return (await fetchManifest(location)) as RawFileItem[];
+export async function fetchDatasetDetailLatest(bucket: string, name: string): Promise<DetailResponse> {
+  const { getInfoApiBucketBucketDatasetNameInfoGet } = await import("@/lib/api/generated");
+
+  const response = await getInfoApiBucketBucketDatasetNameInfoGet(bucket, name, { tag: "latest" });
+
+  const rawData = response.data;
+  const parsed: DataInfoResponse = typeof rawData === "string" ? JSON.parse(rawData) : rawData;
+
+  return transformDatasetDetail(parsed);
 }
 
 /**
- * Build a directory listing for a specific path from the flat file list.
+ * Fetch all files for a dataset version from the version's location URL.
  *
- * Given a flat array of files with relative_path (e.g. "train/n00000001/img.jpg"),
- * returns the entries visible at the given path depth:
- * - Folders: unique next-level path segments (de-duplicated)
- * - Files: entries where the path is fully consumed at this depth
+ * Fetches the raw flat manifest, then builds a ProcessedManifest with three
+ * sorted/indexed structures for O(log n) directory listing and file search.
+ * The result is cached by React Query — the O(n log n) sort happens once.
  *
- * Folders are sorted before files; both groups are sorted alphabetically.
+ * Returns an empty ProcessedManifest if no location URL is provided.
  *
- * @param items - Flat file list from the location manifest
+ * @param location - The version's location URL (DatasetVersion.location)
+ */
+export async function fetchDatasetFiles(location: string | null): Promise<ProcessedManifest> {
+  if (!location) return { byPath: [], byFilename: [], fileTypes: [] };
+  const { fetchManifest } = await import("@/lib/api/server/dataset-actions");
+  const items = (await fetchManifest(location)) as RawFileItem[];
+
+  // Sort by full relative_path — enables binary-search directory listing
+  const byPath = [...items].sort((a, b) => a.relative_path.localeCompare(b.relative_path));
+
+  // Build filename index sorted by lowercase last-segment name — enables binary-search filename filter
+  const byFilename = byPath
+    .map((item) => ({ name: item.relative_path.split("/").pop()?.toLowerCase() ?? "", item }))
+    .sort((a, b) => a.name.localeCompare(b.name));
+
+  // Collect unique lowercase extensions for future type filter
+  const extSet = new Set<string>();
+  for (const item of byPath) {
+    const ext = item.relative_path.split(".").pop()?.toLowerCase();
+    if (ext) extSet.add(ext);
+  }
+  const fileTypes = [...extSet].sort();
+
+  return { byPath, byFilename, fileTypes };
+}
+
+/**
+ * Binary search lower bound: first index where items[i].relative_path >= prefix.
+ * Requires items sorted ascending by relative_path.
+ */
+export function binarySearchByPath(sorted: readonly RawFileItem[], prefix: string): number {
+  let lo = 0,
+    hi = sorted.length;
+  while (lo < hi) {
+    const mid = (lo + hi) >>> 1;
+    if (sorted[mid].relative_path < prefix) {
+      lo = mid + 1;
+    } else {
+      hi = mid;
+    }
+  }
+  return lo;
+}
+
+/**
+ * Build a directory listing for a specific path from the sorted flat file list.
+ *
+ * Accepts the `byPath` array from ProcessedManifest (sorted by relative_path).
+ * For non-root paths uses binary search to skip to the right prefix range — O(log n + k)
+ * where k = entries directly under that path. Root level is always O(n).
+ *
+ * Returns folders before files; both groups sorted alphabetically.
+ *
+ * @param items - Sorted flat file list (ProcessedManifest.byPath)
  * @param path - Current directory path (empty string = root)
  */
 export function buildDirectoryListing(items: RawFileItem[], path: string): DatasetFile[] {
@@ -477,24 +546,26 @@ export function buildDirectoryListing(items: RawFileItem[], path: string): Datas
   const seenFolders = new Set<string>();
   const result: DatasetFile[] = [];
 
-  for (const item of items) {
-    if (!item.relative_path.startsWith(prefix)) continue;
+  const start = prefix ? binarySearchByPath(items, prefix) : 0;
 
-    const rest = item.relative_path.slice(prefix.length);
+  for (let i = start; i < items.length; i++) {
+    const { relative_path, size, etag, url, storage_path } = items[i];
+    if (prefix && !relative_path.startsWith(prefix)) break;
+
+    const rest = relative_path.slice(prefix.length);
     const slashIndex = rest.indexOf("/");
 
     if (slashIndex === -1) {
-      // File at this level
       result.push({
         name: rest,
         type: "file",
-        size: item.size,
-        checksum: item.etag,
-        url: item.url,
-        s3Path: item.storage_path,
+        size,
+        checksum: etag,
+        url,
+        relativePath: relative_path,
+        storagePath: storage_path,
       });
     } else {
-      // Folder — show the next path segment once
       const folderName = rest.slice(0, slashIndex);
       if (!seenFolders.has(folderName)) {
         seenFolders.add(folderName);
@@ -521,18 +592,23 @@ export function buildDirectoryListing(items: RawFileItem[], path: string): Datas
  * Client-side filters (created_at, updated_at) are intentionally excluded so
  * they don't trigger new API calls — the shim handles them from the cache.
  */
-export function buildAllDatasetsQueryKey(searchChips: SearchChip[], showAllUsers: boolean = false): readonly unknown[] {
+function buildDatasetFilters(
+  searchChips: SearchChip[],
+  showAllUsers: boolean,
+): Record<string, string | string[] | boolean> {
   const buckets = getChipValues(searchChips, "bucket").sort();
   const users = getChipValues(searchChips, "user").sort();
   const search = getFirstChipValue(searchChips, "name");
-
   const filters: Record<string, string | string[] | boolean> = {};
   if (search) filters.search = search;
   if (buckets.length > 0) filters.buckets = buckets;
   if (users.length > 0) filters.users = users;
   filters.showAllUsers = showAllUsers;
+  return filters;
+}
 
-  return ["datasets", "all", filters] as const;
+export function buildAllDatasetsQueryKey(searchChips: SearchChip[], showAllUsers: boolean = false): readonly unknown[] {
+  return ["datasets", "all", buildDatasetFilters(searchChips, showAllUsers)] as const;
 }
 
 /**
@@ -541,19 +617,7 @@ export function buildAllDatasetsQueryKey(searchChips: SearchChip[], showAllUsers
  * Follows workflows pattern.
  */
 export function buildDatasetsQueryKey(searchChips: SearchChip[], showAllUsers: boolean = false): readonly unknown[] {
-  // Extract filter values by field
-  const buckets = getChipValues(searchChips, "bucket").sort();
-  const users = getChipValues(searchChips, "user").sort();
-  const search = getFirstChipValue(searchChips, "name");
-
-  // Build query key - only include filters that have values
-  const filters: Record<string, string | string[] | boolean> = {};
-  if (search) filters.search = search;
-  if (buckets.length > 0) filters.buckets = buckets;
-  if (users.length > 0) filters.users = users;
-  filters.showAllUsers = showAllUsers;
-
-  return ["datasets", "paginated", filters] as const;
+  return ["datasets", "paginated", buildDatasetFilters(searchChips, showAllUsers)] as const;
 }
 
 /**
@@ -561,6 +625,15 @@ export function buildDatasetsQueryKey(searchChips: SearchChip[], showAllUsers: b
  */
 export function buildDatasetDetailQueryKey(bucket: string, name: string): readonly unknown[] {
   return ["datasets", "detail", bucket, name] as const;
+}
+
+/**
+ * Build query key for dataset detail (latest version only).
+ * Separate cache entry from the full detail query so the lightweight call
+ * doesn't interfere with the all-versions fetch.
+ */
+export function buildDatasetLatestQueryKey(bucket: string, name: string): readonly unknown[] {
+  return ["datasets", "detail", bucket, name, "latest"] as const;
 }
 
 /**

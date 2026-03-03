@@ -48,6 +48,7 @@ import {
 import { createDatasetColumns } from "@/features/datasets/list/components/table/dataset-column-defs";
 import { useDatasetsTableStore } from "@/features/datasets/list/stores/datasets-table-store";
 import { useBreadcrumbOrigin } from "@/components/chrome/breadcrumb-origin-context";
+import { useDatasetsPanelContext } from "@/features/datasets/layout/datasets-panel-context";
 
 // =============================================================================
 // Types
@@ -70,12 +71,6 @@ export interface DatasetsDataTableProps {
   sorting?: SortState<string>;
   /** Callback when sort changes */
   onSortingChange?: (sorting: SortState<string>) => void;
-
-  // === Panel selection props ===
-  /** Called when the leading open-details button is clicked */
-  onOpenPanel?: (dataset: Dataset) => void;
-  /** ID of the currently selected dataset (for row highlight) */
-  selectedDatasetId?: string;
 
   // === Infinite scroll props ===
   /** Whether more data is available to load */
@@ -105,8 +100,6 @@ export const DatasetsDataTable = memo(function DatasetsDataTable({
   onRetry,
   sorting,
   onSortingChange,
-  onOpenPanel,
-  selectedDatasetId,
   hasNextPage = false,
   onLoadMore,
   isFetchingNextPage = false,
@@ -115,6 +108,7 @@ export const DatasetsDataTable = memo(function DatasetsDataTable({
   const pathname = usePathname();
   const { startTransition } = useViewTransition();
   const { setOrigin } = useBreadcrumbOrigin();
+  const { openPanel } = useDatasetsPanelContext();
 
   // Shared preferences (hydration-safe)
   const compactMode = useCompactMode();
@@ -130,16 +124,7 @@ export const DatasetsDataTable = memo(function DatasetsDataTable({
 
   const columnVisibility = useColumnVisibility(columnOrder, storeVisibleColumnIds);
 
-  // Stable open-panel callback for memoization
-  const handleOpenPanel = useCallback(
-    (dataset: Dataset) => {
-      onOpenPanel?.(dataset);
-    },
-    [onOpenPanel],
-  );
-
-  // Create TanStack columns (includes leading _open column)
-  const columns = useMemo(() => createDatasetColumns({ onOpenPanel: handleOpenPanel }), [handleOpenPanel]);
+  const columns = useMemo(() => createDatasetColumns(openPanel), [openPanel]);
 
   const fixedColumns = useMemo(() => Array.from(MANDATORY_COLUMN_IDS), []);
 
@@ -240,7 +225,6 @@ export const DatasetsDataTable = memo(function DatasetsDataTable({
         // Interaction
         onRowClick={handleRowClick}
         getRowHref={getRowHref}
-        selectedRowId={selectedDatasetId}
         rowClassName={rowClassName}
       />
     </div>

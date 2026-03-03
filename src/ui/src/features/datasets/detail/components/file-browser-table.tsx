@@ -18,17 +18,17 @@
  * FileBrowserTable — Google Drive-style file listing for a dataset directory.
  *
  * Renders folders before files with columns for name, size, and type.
- * A leading fixed copy-path button is shown for each file row (always visible).
+ * A trailing copy-path button is shown for each file row.
  */
 
 "use client";
 
-import { useMemo, useCallback, memo, useRef, useEffect } from "react";
+import { useMemo, useCallback, memo, useRef, useEffect, useState } from "react";
 import type { ColumnDef } from "@tanstack/react-table";
 import { Folder, File, FileText, FileImage, FileVideo, Copy, Database } from "lucide-react";
 import { DataTable } from "@/components/data-table/data-table";
 import { TableEmptyState } from "@/components/data-table/table-empty-state";
-import { TableLoadingSkeleton } from "@/components/data-table/table-states";
+import { TableLoadingSkeleton, TableErrorState } from "@/components/data-table/table-states";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/shadcn/tooltip";
 import { formatBytes } from "@/lib/utils";
 import { useCopy } from "@/hooks/use-copy";
@@ -36,6 +36,7 @@ import { useCompactMode } from "@/hooks/shared-preferences-hooks";
 import { TABLE_ROW_HEIGHTS } from "@/lib/config";
 import { MidTruncate } from "@/components/mid-truncate";
 import type { DatasetFile } from "@/lib/api/adapter/datasets";
+import type { SortState } from "@/components/data-table/types";
 
 // =============================================================================
 // Types
@@ -56,9 +57,27 @@ interface FileBrowserTableProps {
   onNavigateUp?: () => void;
   /** Called when user presses Escape to clear file selection */
   onClearSelection?: () => void;
-  /** Whether the file preview panel is currently visible (controls j/k live-update) */
-  previewOpen?: boolean;
   isLoading?: boolean;
+  /** Error from the file listing query — renders an error state inside the table shell */
+  error?: Error | null;
+  /** Called when user clicks retry on an error state */
+  onRetry?: () => void;
+  /** When true, column ResizeObserver changes are ignored (pass isDragging from gutter drag) */
+  suspendResize?: boolean;
+  /** Register a callback invoked when the layout stabilizes (e.g. after gutter drag ends) */
+  registerLayoutStableCallback?: (callback: () => void) => () => void;
+  /** When true, shows the Location column (relative path). Active during file filter search. */
+  showLocation?: boolean;
+}
+
+// =============================================================================
+// Type rank — folders and dataset-members always sort above files
+// =============================================================================
+
+function typeRank(type: DatasetFile["type"]): number {
+  if (type === "dataset-member") return 0;
+  if (type === "folder") return 1;
+  return 2;
 }
 
 // =============================================================================
@@ -119,15 +138,15 @@ function FileIcon({ name, type }: { name: string; type: DatasetFile["type"] }) {
 // Copy path button (inline in name cell, copies S3 URI)
 // =============================================================================
 
-function CopyPathButton({ s3Path }: { s3Path: string }) {
+function CopyPathButton({ storagePath }: { storagePath: string }) {
   const { copied, copy } = useCopy();
 
   const handleCopy = useCallback(
     (e: React.MouseEvent) => {
       e.stopPropagation();
-      void copy(s3Path);
+      void copy(storagePath);
     },
-    [copy, s3Path],
+    [copy, storagePath],
   );
 
   return (
@@ -137,7 +156,7 @@ function CopyPathButton({ s3Path }: { s3Path: string }) {
           type="button"
           onClick={handleCopy}
           className="shrink-0 rounded p-0.5 text-zinc-400 hover:text-zinc-600 dark:text-zinc-500 dark:hover:text-zinc-300"
-          aria-label={`Copy S3 path: ${s3Path}`}
+          aria-label={`Copy S3 path: ${storagePath}`}
         >
           <Copy
             className="size-3.5"
@@ -154,14 +173,17 @@ function CopyPathButton({ s3Path }: { s3Path: string }) {
 // Column definitions
 // =============================================================================
 
-function createColumns(): ColumnDef<DatasetFile>[] {
+function createColumns(showLocation: boolean): ColumnDef<DatasetFile>[] {
   return [
     {
       id: "name",
       accessorKey: "name",
       header: "Name",
+      enableSorting: true,
+      size: 400,
+      minSize: 160,
       cell: ({ row }) => {
-        const { name, type, label, s3Path } = row.original;
+        const { name, type, label, storagePath } = row.original;
         const displayName = label ?? name;
         return (
           <span className="flex w-full min-w-0 items-center justify-between gap-2">
@@ -179,7 +201,7 @@ function createColumns(): ColumnDef<DatasetFile>[] {
                 <span className="truncate text-sm text-zinc-900 dark:text-zinc-100">{displayName}</span>
               )}
             </span>
-            {type === "file" && s3Path && <CopyPathButton s3Path={s3Path} />}
+            {type === "file" && storagePath && <CopyPathButton storagePath={storagePath} />}
           </span>
         );
       },
@@ -188,12 +210,14 @@ function createColumns(): ColumnDef<DatasetFile>[] {
       id: "size",
       accessorKey: "size",
       header: "Size",
+      enableSorting: true,
+      size: 120,
+      minSize: 90,
       cell: ({ row }) => {
         const { size, type } = row.original;
-        if (type === "folder" || (type !== "dataset-member" && size === undefined)) {
+        if (type === "folder" || size === undefined) {
           return <span className="text-sm text-zinc-400 dark:text-zinc-600">—</span>;
         }
-        if (size === undefined) return <span className="text-sm text-zinc-400 dark:text-zinc-600">—</span>;
         return (
           <span className="text-sm text-zinc-600 dark:text-zinc-400">{formatBytes(size / 1024 ** 3).display}</span>
         );
@@ -203,6 +227,9 @@ function createColumns(): ColumnDef<DatasetFile>[] {
       id: "type",
       accessorKey: "name",
       header: "Type",
+      enableSorting: false,
+      size: 90,
+      minSize: 70,
       cell: ({ row }) => {
         const { name, type } = row.original;
         if (type === "dataset-member") {
@@ -215,6 +242,30 @@ function createColumns(): ColumnDef<DatasetFile>[] {
         return <span className="font-mono text-xs text-zinc-500 dark:text-zinc-400">{ext}</span>;
       },
     },
+    ...(showLocation
+      ? [
+          {
+            id: "location",
+            accessorKey: "relativePath",
+            header: "Location",
+            enableSorting: false,
+            size: 280,
+            minSize: 120,
+            cell: ({ row }: { row: { original: DatasetFile } }) => {
+              const { relativePath, type } = row.original;
+              if (!relativePath || type !== "file") {
+                return <span className="text-sm text-zinc-400 dark:text-zinc-600">—</span>;
+              }
+              return (
+                <MidTruncate
+                  text={relativePath}
+                  className="font-mono text-xs text-zinc-500 dark:text-zinc-400"
+                />
+              );
+            },
+          } satisfies ColumnDef<DatasetFile>,
+        ]
+      : []),
   ];
 }
 
@@ -230,22 +281,55 @@ export const FileBrowserTable = memo(function FileBrowserTable({
   onSelectFile,
   onNavigateUp,
   onClearSelection,
-  previewOpen = false,
   isLoading = false,
+  error,
+  onRetry,
+  suspendResize,
+  registerLayoutStableCallback,
+  showLocation = false,
 }: FileBrowserTableProps) {
   const compactMode = useCompactMode();
   const rowHeight = compactMode ? TABLE_ROW_HEIGHTS.COMPACT : TABLE_ROW_HEIGHTS.NORMAL;
 
-  // Sort: dataset-members first, then folders, then files — each group alphabetically
-  const sortedFiles = useMemo(
-    () =>
-      [...files].sort((a, b) => {
-        const rank = (t: DatasetFile["type"]) => (t === "dataset-member" ? 0 : t === "folder" ? 1 : 2);
-        const diff = rank(a.type) - rank(b.type);
-        if (diff !== 0) return diff;
+  // Sort state — default to name ascending
+  const [sorting, setSorting] = useState<SortState<string>>({ column: "name", direction: "asc" });
+
+  // Sort: dataset-members first, then folders, then files — user-controlled sort within each group
+  const sortedFiles = useMemo(() => {
+    const dir = sorting.direction === "asc" ? 1 : -1;
+    return [...files].sort((a, b) => {
+      // Type rank is always fixed: dataset-members → folders → files
+      const rankDiff = typeRank(a.type) - typeRank(b.type);
+      if (rankDiff !== 0) return rankDiff;
+
+      // Within same type, apply sort column
+      if (sorting.column === "size") {
+        const aSize = a.size ?? -1;
+        const bSize = b.size ?? -1;
+        if (aSize !== bSize) return (aSize - bSize) * dir;
+        // Tie-break by name
         return (a.label ?? a.name).localeCompare(b.label ?? b.name);
-      }),
-    [files],
+      }
+
+      // Default: sort by display name
+      return (a.label ?? a.name).localeCompare(b.label ?? b.name) * dir;
+    });
+  }, [files, sorting]);
+
+  // Pre-compute index map for O(1) zebra stripe lookup
+  const rowIndexMap = useMemo(() => {
+    const map = new Map<DatasetFile, number>();
+    sortedFiles.forEach((file, index) => map.set(file, index));
+    return map;
+  }, [sortedFiles]);
+
+  // Zebra stripes: odd rows get a subtle background
+  const rowClassName = useCallback(
+    (item: DatasetFile) => {
+      const idx = rowIndexMap.get(item) ?? 0;
+      return idx % 2 === 1 ? "bg-zinc-50 dark:bg-zinc-900/50" : "";
+    },
+    [rowIndexMap],
   );
 
   // Row ID = full path so it matches selectedFile from URL state
@@ -278,28 +362,13 @@ export const FileBrowserTable = memo(function FileBrowserTable({
     if (!isBodyFocused && !isFocusInTable) return;
 
     const raf = requestAnimationFrame(() => {
-      // aria-rowindex is 1-based: header=1, first data row=2.
-      // Select by aria-rowindex rather than tabindex="0" so that stale focusedRowIndex
-      // state from the previous directory doesn't cause a non-first row to be focused.
       const firstRow = tableAreaRef.current?.querySelector<HTMLElement>('[aria-rowindex="2"]');
       firstRow?.focus({ preventScroll: true });
     });
     return () => cancelAnimationFrame(raf);
-  }, [sortedFiles]); // Re-runs when directory changes or data loads
+  }, [sortedFiles]);
 
-  // Live preview on keyboard focus: update preview when it's already open, no-op for folders
-  // or when preview is closed (avoids opening it unexpectedly during j/k navigation)
-  const handleFocusedRowChange = useCallback(
-    (file: DatasetFile | null) => {
-      if (!file || file.type !== "file") return; // folders and dataset-members are not previewable
-      if (!previewOpen) return;
-      const filePath = path ? `${path}/${file.name}` : file.name;
-      onSelectFile(filePath);
-    },
-    [path, onSelectFile, previewOpen],
-  );
-
-  // Handle directory navigation and selection shortcuts at the table wrapper level
+  // Handle directory navigation and selection shortcuts
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent<HTMLDivElement>) => {
       const target = e.target as HTMLElement;
@@ -314,6 +383,17 @@ export const FileBrowserTable = memo(function FileBrowserTable({
             onNavigateUp();
           }
           break;
+        case "l":
+        case "ArrowRight":
+        case "Enter": {
+          const rowIndex = parseInt(target.getAttribute("aria-rowindex") ?? "0", 10);
+          const file = sortedFiles[rowIndex - 2]; // aria-rowindex starts at 2 (1 = header)
+          if (file) {
+            e.preventDefault();
+            handleRowClick(file);
+          }
+          break;
+        }
         case "Escape":
           if (onClearSelection) {
             e.preventDefault();
@@ -322,39 +402,54 @@ export const FileBrowserTable = memo(function FileBrowserTable({
           break;
       }
     },
-    [onNavigateUp, onClearSelection],
+    [onNavigateUp, onClearSelection, sortedFiles, handleRowClick],
   );
 
-  const columns = useMemo(() => createColumns(), []);
+  const columns = useMemo(() => createColumns(showLocation), [showLocation]);
 
   const emptyContent = useMemo(() => <TableEmptyState message="This directory is empty or does not exist" />, []);
-
-  if (isLoading) {
-    return <TableLoadingSkeleton rowHeight={rowHeight} />;
-  }
 
   return (
     <div
       ref={tableAreaRef}
-      className="contents"
+      className="flex h-full flex-col overflow-hidden rounded-xl border border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-950"
       role="presentation"
       onKeyDown={handleKeyDown}
     >
-      <DataTable<DatasetFile>
-        data={sortedFiles}
-        columns={columns}
-        getRowId={getRowId}
-        onRowClick={handleRowClick}
-        onFocusedRowChange={handleFocusedRowChange}
-        selectedRowId={selectedFile ?? undefined}
-        rowHeight={rowHeight}
-        compact={compactMode}
-        emptyContent={emptyContent}
-        headerClassName="px-4 py-[18.5px]"
-        theadClassName="file-browser-thead"
-        className="text-sm"
-        scrollClassName="flex-1"
-      />
+      {error ? (
+        <TableErrorState
+          error={error}
+          title="Unable to load files"
+          onRetry={onRetry}
+          headers={showLocation ? ["Name", "Size", "Type", "Location"] : ["Name", "Size", "Type"]}
+        />
+      ) : isLoading ? (
+        <TableLoadingSkeleton
+          rowHeight={rowHeight}
+          columnCount={showLocation ? 4 : 3}
+          headers={showLocation ? ["Name", "Size", "Type", "Location"] : ["Name", "Size", "Type"]}
+        />
+      ) : (
+        <DataTable<DatasetFile>
+          data={sortedFiles}
+          columns={columns}
+          getRowId={getRowId}
+          onRowClick={handleRowClick}
+          selectedRowId={selectedFile ?? undefined}
+          rowHeight={rowHeight}
+          compact={compactMode}
+          emptyContent={emptyContent}
+          headerClassName="px-4 py-3"
+          theadClassName="file-browser-thead"
+          className="text-sm"
+          scrollClassName="flex-1 min-h-0"
+          sorting={sorting}
+          onSortingChange={setSorting}
+          rowClassName={rowClassName}
+          suspendResize={suspendResize}
+          registerLayoutStableCallback={registerLayoutStableCallback}
+        />
+      )}
     </div>
   );
 });
