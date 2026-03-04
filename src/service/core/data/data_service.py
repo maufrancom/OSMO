@@ -999,6 +999,7 @@ def list_dataset_from_bucket(name: objects.DatasetPattern | None = None,
                              order: connectors.ListOrder
                                  = fastapi.Query(default=connectors.ListOrder.ASC),
                              count: int = 20,
+                             offset: int = 0,
                              username: str = fastapi.Depends(connectors.parse_username))\
                              -> objects.DataListResponse:
     """ This api returns the list of datasets/colections."""
@@ -1050,19 +1051,15 @@ def list_dataset_from_bucket(name: objects.DatasetPattern | None = None,
         fetch_cmd += ' AND name LIKE %s'
         fetch_input.append('%' + name + '%')
 
-    fetch_cmd += ' ORDER BY combined_date DESC LIMIT %s'
-    fetch_input.append(min(count, 1000))
-
-    fetch_cmd = f'SELECT * FROM ({fetch_cmd}) as ds'
-    if order == connectors.ListOrder.ASC:
-        fetch_cmd += ' ORDER BY combined_date ASC'
-    else:
-        fetch_cmd += ' ORDER BY combined_date DESC'
-    fetch_cmd += ';'
+    sort_direction = order.value
+    fetch_cmd += f' ORDER BY combined_date {sort_direction} LIMIT %s OFFSET %s;'
+    fetch_input.append(count + 1) # overfetch by 1 to check if there are more entries
+    fetch_input.append(offset)
 
     dataset_rows = postgres.execute_fetch_command(fetch_cmd, tuple(fetch_input), True)
+    more_entries = len(dataset_rows) > count
     rows = []
-    for row in dataset_rows:
+    for row in dataset_rows[:count]:
         rows.append(objects.DataListEntry(name=row['name'],
                                           id=row['id'],
                                           bucket=row['bucket'],
@@ -1076,7 +1073,7 @@ def list_dataset_from_bucket(name: objects.DatasetPattern | None = None,
                                           type=objects.DatasetType.COLLECTION
                                               if row['is_collection']
                                               else objects.DatasetType.DATASET))
-    return objects.DataListResponse(datasets=rows)
+    return objects.DataListResponse(datasets=rows, more_entries=more_entries)
 
 
 @router.post('/{bucket}/dataset/{name}/collect')

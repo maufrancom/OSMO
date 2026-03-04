@@ -165,6 +165,7 @@ class DataListEntry(pydantic.BaseModel, extra=pydantic.Extra.forbid):
 class DataListResponse(pydantic.BaseModel, extra=pydantic.Extra.forbid):
     """ Object storing Data List Elements. """
     datasets: List[DataListEntry]
+    more_entries: bool = False
 
 
 class DataTagResponse(pydantic.BaseModel, extra=pydantic.Extra.forbid):
