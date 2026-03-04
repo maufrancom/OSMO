@@ -46,7 +46,6 @@ function presetPillClasses(bgClass: string, active: boolean): string {
 // =============================================================================
 
 export interface DatasetsToolbarProps {
-  datasets: Dataset[];
   searchChips: SearchChip[];
   onSearchChipsChange: (chips: SearchChip[]) => void;
   /** Results count for displaying "N results" or "M of N results" */
@@ -64,7 +63,6 @@ export interface DatasetsToolbarProps {
 // =============================================================================
 
 export const DatasetsToolbar = memo(function DatasetsToolbar({
-  datasets,
   searchChips,
   onSearchChipsChange,
   resultsCount,
@@ -85,8 +83,6 @@ export const DatasetsToolbar = memo(function DatasetsToolbar({
       DATASET_STATIC_FIELDS[1], // name
       DATASET_STATIC_FIELDS[2], // bucket
       userField, // async - complete user list
-      DATASET_STATIC_FIELDS[3], // created_at
-      DATASET_STATIC_FIELDS[4], // updated_at
     ],
     [userField],
   );
@@ -134,7 +130,7 @@ export const DatasetsToolbar = memo(function DatasetsToolbar({
 
   return (
     <TableToolbar
-      data={datasets}
+      data={[]}
       searchFields={searchFields}
       columns={OPTIONAL_COLUMNS}
       visibleColumnIds={visibleColumnIds}
@@ -142,7 +138,7 @@ export const DatasetsToolbar = memo(function DatasetsToolbar({
       searchChips={searchChips}
       onSearchChipsChange={onSearchChipsChange}
       defaultField="name"
-      placeholder="Search datasets... (try 'type:', 'name:', 'bucket:', 'user:', 'created_at:')"
+      placeholder="Search datasets... (try 'type:', 'name:', 'bucket:', 'user:')"
       searchPresets={searchPresets}
       resultsCount={resultsCount}
       autoRefreshProps={autoRefreshProps}

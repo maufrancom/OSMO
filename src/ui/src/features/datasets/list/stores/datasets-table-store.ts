@@ -24,7 +24,11 @@
  */
 
 import { createTableStore } from "@/stores/create-table-store";
-import { DEFAULT_VISIBLE_COLUMNS, DEFAULT_COLUMN_ORDER, DEFAULT_SORT } from "@/features/datasets/list/lib/dataset-columns";
+import {
+  DEFAULT_VISIBLE_COLUMNS,
+  DEFAULT_COLUMN_ORDER,
+  DEFAULT_SORT,
+} from "@/features/datasets/list/lib/dataset-columns";
 
 /**
  * Datasets table store for column preferences.

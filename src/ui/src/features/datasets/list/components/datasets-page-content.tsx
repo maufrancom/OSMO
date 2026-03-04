@@ -21,7 +21,7 @@
  * Receives hydrated data from the server and handles all user interactions.
  *
  * Features:
- * - Smart search with filter chips (name, bucket, user, created_at, updated_at)
+ * - Smart search with filter chips (type, name, bucket, user)
  * - "My Datasets" amber pill preset (like "My Workflows")
  * - Column visibility and reordering
  */
@@ -54,12 +54,14 @@ export function DatasetsPageContent({ initialUsername }: DatasetsPageContentProp
   const currentUsername = initialUsername ?? user?.username ?? null;
 
   // ==========================================================================
-  // Sort state from store (persisted, client-side via shim)
+  // Sort state — column is always updated_at, user toggles direction only
   // ==========================================================================
 
   const storeSort = useDatasetsTableStore((s) => s.sort);
   const setSort = useDatasetsTableStore((s) => s.setSort);
   const clearSort = useDatasetsTableStore((s) => s.clearSort);
+
+  const sortDirection: "ASC" | "DESC" = storeSort?.direction === "asc" ? "ASC" : "DESC";
 
   const sortState = useMemo((): SortState<string> | undefined => {
     if (!storeSort) return undefined;
@@ -93,15 +95,24 @@ export function DatasetsPageContent({ initialUsername }: DatasetsPageContentProp
   );
 
   // ==========================================================================
-  // Data Fetching — fetch-all + shim approach
-  // Fetches all datasets at once (count: 10_000); shim applies client-side
-  // date range filters from the React Query cache (no infinite scroll).
+  // Data Fetching — server-side pagination via usePaginatedData
   // ==========================================================================
 
-  const { datasets, allDatasets, isLoading, error, refetch, total, filteredTotal, hasActiveFilters } = useDatasetsData({
+  const {
+    datasets,
+    isLoading,
+    error,
+    refetch,
+    total,
+    filteredTotal,
+    hasActiveFilters,
+    hasMore,
+    fetchNextPage,
+    isFetchingNextPage,
+  } = useDatasetsData({
     searchChips: effectiveChips,
     showAllUsers: optOut,
-    sort: storeSort ?? null,
+    sortDirection,
   });
 
   // Results count for FilterBar display (consolidated hook)
@@ -120,7 +131,6 @@ export function DatasetsPageContent({ initialUsername }: DatasetsPageContentProp
           compact
         >
           <DatasetsToolbar
-            datasets={allDatasets}
             searchChips={effectiveChips}
             onSearchChipsChange={handleSearchChipsChange}
             resultsCount={resultsCount}
@@ -146,6 +156,9 @@ export function DatasetsPageContent({ initialUsername }: DatasetsPageContentProp
             onRetry={refetch}
             sorting={sortState}
             onSortingChange={handleSortingChange}
+            hasNextPage={hasMore}
+            onLoadMore={fetchNextPage}
+            isFetchingNextPage={isFetchingNextPage}
           />
         </InlineErrorBoundary>
       </div>

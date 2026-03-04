@@ -24,7 +24,6 @@
 import type { SearchField } from "@/components/filter-bar/lib/types";
 import type { Dataset } from "@/lib/api/adapter/datasets";
 import { DatasetType } from "@/lib/api/generated";
-import { getDateRangePresetSuggestions } from "@/features/datasets/list/lib/date-filter-utils";
 
 // Re-export Dataset type for convenience
 export type { Dataset } from "@/lib/api/adapter/datasets";
@@ -60,26 +59,6 @@ export const DATASET_STATIC_FIELDS: readonly SearchField<Dataset>[] = [
       const buckets = datasets.map((d) => d.bucket).filter(Boolean);
       return [...new Set(buckets)].sort();
     },
-    exhaustive: false,
-  },
-  {
-    id: "created_at",
-    label: "Created",
-    prefix: "created_at:",
-    hint: "creation date",
-    freeFormHint: "e.g. 'last 7 days' or '2024-01-01..2024-12-31'",
-    singular: true,
-    getValues: (_datasets: Dataset[]) => getDateRangePresetSuggestions(),
-    exhaustive: false,
-  },
-  {
-    id: "updated_at",
-    label: "Updated",
-    prefix: "updated_at:",
-    hint: "last updated",
-    freeFormHint: "e.g. 'last 7 days' or '2024-01-01..2024-12-31'",
-    singular: true,
-    getValues: (_datasets: Dataset[]) => getDateRangePresetSuggestions(),
     exhaustive: false,
   },
 ] as const;

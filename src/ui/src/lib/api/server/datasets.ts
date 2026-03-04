@@ -17,38 +17,54 @@
 /**
  * Server-Side Dataset Fetching
  *
- * Fetch datasets data on the server for SSR/RSC.
- * Uses React's cache() for request deduplication.
+ * Prefetch datasets data on the server for SSR/RSC hydration.
+ * Uses React's cache() for request deduplication and prefetchInfiniteQuery
+ * to match the client's usePaginatedData hook.
  */
 
 import { cache } from "react";
 import { QueryClient } from "@tanstack/react-query";
 import type { SearchChip } from "@/stores/types";
-import { buildAllDatasetsQueryKey, buildDatasetDetailQueryKey } from "@/lib/api/adapter/datasets";
+import { buildDatasetsQueryKey, buildDatasetDetailQueryKey } from "@/lib/api/adapter/datasets";
 
 // =============================================================================
 // Prefetch Functions
 // =============================================================================
 
 /**
- * Prefetch all datasets for fetch-all query hydration.
+ * Prefetch the first page of datasets for infinite query hydration.
  *
- * Uses prefetchQuery to match the client's useAllDatasets hook.
- * Ensures cache hit when client hydrates — no extra network request.
+ * Uses prefetchInfiniteQuery to match the client's usePaginatedData hook.
+ * Only prefetches the first page — subsequent pages are fetched on demand.
  *
  * @param queryClient - The QueryClient to prefetch into
  * @param filterChips - Filter chips from URL (including default user chip if pre-populated)
  * @param showAllUsers - Whether to include all users' datasets (default: false)
+ * @param sortDirection - Sort order (default: DESC — newest first)
  */
 export const prefetchDatasetsList = cache(
-  async (queryClient: QueryClient, filterChips: SearchChip[] = [], showAllUsers = false) => {
-    const { fetchAllDatasets } = await import("@/lib/api/adapter/datasets");
+  async (
+    queryClient: QueryClient,
+    filterChips: SearchChip[] = [],
+    showAllUsers = false,
+    sortDirection: "ASC" | "DESC" = "DESC",
+  ) => {
+    const { fetchPaginatedDatasets } = await import("@/lib/api/adapter/datasets");
 
-    const queryKey = buildAllDatasetsQueryKey(filterChips, showAllUsers);
+    const queryKey = buildDatasetsQueryKey(filterChips, showAllUsers, sortDirection);
 
-    await queryClient.prefetchQuery({
+    await queryClient.prefetchInfiniteQuery({
       queryKey,
-      queryFn: () => fetchAllDatasets(showAllUsers, filterChips),
+      queryFn: async () => {
+        return fetchPaginatedDatasets({
+          offset: 0,
+          limit: 50,
+          searchChips: filterChips,
+          showAllUsers,
+          sortDirection,
+        });
+      },
+      initialPageParam: { cursor: undefined, offset: 0 },
     });
   },
 );

@@ -43,7 +43,7 @@ export function createDatasetColumns(
       accessorKey: "name",
       header: COLUMN_LABELS.name,
       minSize: getMinSize("name"),
-      enableSorting: true,
+      enableSorting: false,
       cell: ({ row }) => (
         <div className="flex w-full min-w-0 items-center justify-between gap-2">
           <MidTruncate
@@ -75,7 +75,7 @@ export function createDatasetColumns(
       accessorKey: "type",
       header: COLUMN_LABELS.type,
       minSize: getMinSize("type"),
-      enableSorting: true,
+      enableSorting: false,
       cell: ({ row }) => {
         const isCollection = row.original.type === DatasetType.COLLECTION;
         return (
@@ -97,7 +97,7 @@ export function createDatasetColumns(
       accessorKey: "bucket",
       header: COLUMN_LABELS.bucket,
       minSize: getMinSize("bucket"),
-      enableSorting: true,
+      enableSorting: false,
       cell: ({ row }) => (
         <span className="truncate text-sm text-zinc-600 dark:text-zinc-400">{row.original.bucket}</span>
       ),
@@ -107,7 +107,7 @@ export function createDatasetColumns(
       accessorKey: "version",
       header: COLUMN_LABELS.version,
       minSize: getMinSize("version"),
-      enableSorting: true,
+      enableSorting: false,
       cell: ({ row }) => {
         const version = row.original.version || 0;
         return (
@@ -122,7 +122,7 @@ export function createDatasetColumns(
       accessorKey: "size_bytes",
       header: COLUMN_LABELS.size_bytes,
       minSize: getMinSize("size_bytes"),
-      enableSorting: true,
+      enableSorting: false,
       cell: ({ row }) => {
         const sizeBytes = row.original.size_bytes || 0;
         // Convert bytes to GiB (formatBytes expects GiB)
@@ -140,7 +140,7 @@ export function createDatasetColumns(
       accessorKey: "created_at",
       header: COLUMN_LABELS.created_at,
       minSize: getMinSize("created_at"),
-      enableSorting: true,
+      enableSorting: false,
       cell: ({ row }) => {
         const createdAt = row.original.created_at;
         if (!createdAt) return <span className="text-sm text-zinc-400">—</span>;

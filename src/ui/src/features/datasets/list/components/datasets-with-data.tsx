@@ -62,7 +62,7 @@ export async function DatasetsWithData({ searchParams }: DatasetsWithDataProps) 
   // This await causes the component to suspend
   // React streams the Suspense fallback, then streams this when ready
   try {
-    await prefetchDatasetsList(queryClient, prefetchChips, !shouldPrePopulate);
+    await prefetchDatasetsList(queryClient, prefetchChips, !shouldPrePopulate, "DESC");
   } catch (error) {
     // Prefetch failed (e.g., auth unavailable during HMR, network error, backend down)
     // Page will still render - client will fetch on hydration if cache is empty
