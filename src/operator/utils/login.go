@@ -17,6 +17,7 @@
 package utils
 
 import (
+	"bytes"
 	"context"
 	"encoding/base64"
 	"encoding/json"
@@ -63,10 +64,11 @@ func jwtExpired(token string) bool {
 // It fetches and caches an id_token from the OSMO token refresh endpoint, injecting
 // x-osmo-auth into every gRPC call and refreshing when the JWT is near expiry.
 type TokenCredentials struct {
-	refreshURL string
-	mu         sync.Mutex
-	idToken    string
-	httpClient *http.Client
+	refreshURL   string
+	refreshToken string
+	mu           sync.Mutex
+	idToken      string
+	httpClient   *http.Client
 }
 
 // GetRequestMetadata refreshes the id_token if expired and returns the x-osmo-auth metadata.
@@ -84,12 +86,17 @@ func (tc *TokenCredentials) GetRequestMetadata(ctx context.Context, uri ...strin
 // RequireTransportSecurity returns false to allow use with both HTTP and HTTPS.
 func (tc *TokenCredentials) RequireTransportSecurity() bool { return false }
 
-// fetchToken calls GET refreshURL and stores the returned id_token.
+// fetchToken calls POST refreshURL with the refresh token in the body and stores the returned id_token.
 func (tc *TokenCredentials) fetchToken(ctx context.Context) error {
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, tc.refreshURL, nil)
+	requestBody, err := json.Marshal(map[string]string{"token": tc.refreshToken})
+	if err != nil {
+		return fmt.Errorf("marshal token request body: %w", err)
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, tc.refreshURL, bytes.NewReader(requestBody))
 	if err != nil {
 		return err
 	}
+	req.Header.Set("Content-Type", "application/json")
 	resp, err := tc.httpClient.Do(req)
 	if err != nil {
 		return err
@@ -127,10 +134,10 @@ func NewCredentials(args ListenerArgs) (credentials.PerRPCCredentials, error) {
 		return nil, fmt.Errorf("invalid service URL %q: %w", args.ServiceURL, err)
 	}
 	refreshURLParsed := baseURL.JoinPath("/api/auth/jwt/access_token")
-	refreshURLParsed.RawQuery = "access_token=" + url.QueryEscape(token)
 	refreshURL := refreshURLParsed.String()
 	return &TokenCredentials{
-		refreshURL: refreshURL,
-		httpClient: &http.Client{Timeout: 60 * time.Second},
+		refreshURL:   refreshURL,
+		refreshToken: token,
+		httpClient:   &http.Client{Timeout: 60 * time.Second},
 	}, nil
 }
