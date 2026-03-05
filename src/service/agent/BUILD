@@ -113,6 +113,7 @@ filegroup(
     name = "message_worker_image_layers",
     srcs = [
         ":message_worker_layer_default",
+        ":message_worker_layer_interpreter",
         ":message_worker_layer_packages",
         ":message_worker_wrapper",
     ],
