@@ -351,9 +351,6 @@ data:
                 typed_config:
                   "@type": type.googleapis.com/envoy.extensions.filters.http.ext_authz.v3.ExtAuthz
                   transport_api_version: V3
-                  with_request_body:
-                    max_request_bytes: 8192
-                    allow_partial_message: true
                   failure_mode_allow: false
                   grpc_service:
                     envoy_grpc:
