@@ -37,9 +37,6 @@ spec:
         {{- toYaml . | nindent 8 }}
         {{- end }}
       annotations:
-      {{- if .Values.sidecars.OTEL.enabled }}
-        sidecar.opentelemetry.io/inject: "true"
-      {{- end}}
       {{- with .Values.services.backendListener.extraPodAnnotations }}
       {{- toYaml . | nindent 8 }}
       {{- end }}
@@ -76,6 +73,9 @@ spec:
             drop: ["ALL"]
           runAsNonRoot: true
           runAsUser: 1001
+        ports:
+        - name: metrics
+          containerPort: 9464
         command:
         - listener
         args:
@@ -162,9 +162,6 @@ spec:
           timeoutSeconds: 15
           initialDelaySeconds: 10
 
-      {{- if .Values.sidecars.OTEL.enabled }}
-      {{- include "backend-operator.injectOTEL" . | nindent 6}}
-      {{- end }}
       {{- with .Values.services.backendListener.extraSidecarContainers }}
       {{- toYaml . | nindent 6 }}
       {{- end }}

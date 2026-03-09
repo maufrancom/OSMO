@@ -1269,6 +1269,12 @@ services:
       service:
         useHttp2: true
 
+## PodMonitor configuration (requires Prometheus Operator / monitoring.coreos.com CRD)
+## Set enabled: false if the PodMonitor CRD is not installed in your cluster.
+##
+podMonitor:
+  enabled: true
+
 ## Configuration for service sidecar containers
 ##
 sidecars:
@@ -1758,6 +1764,10 @@ sidecars:
     ##
     passAccessToken: false
 
+    ## Use Redis (services.redis) as the session store instead of in-memory
+    ##
+    redisSessionStore: false
+
     ## Use Kubernetes secrets for credentials
     ##
     useKubernetesSecrets: false
@@ -1799,107 +1809,6 @@ sidecars:
         memory: "64Mi"
       limits:
         memory: "128Mi"
-
-  ## Log agent configuration for centralized log collection
-  ##
-  logAgent:
-    ## Enable log agent sidecar
-    ##
-    enabled: true
-
-    ## Log agent container image
-    ##
-    image: fluent/fluent-bit:4.0.8-debug
-
-    ## Image pull policy for log agent containers
-    ##
-    imagePullPolicy: IfNotPresent
-
-    ## Prometheus metrics port
-    ##
-    prometheusPort: 2020
-
-    ## Log rotation configuration
-    ##
-    logrotate:
-      ## Enable automatic log rotation
-      ##
-      enabled: true
-
-      ## Log rotation frequency
-      ##
-      frequency: hourly
-
-      ## Maximum log file size before rotation
-      ##
-      maxSize: 10M
-
-      ## Number of rotated files to keep
-      ##
-      rotateCount: 5
-
-      ## Sleep interval between rotation checks (seconds)
-      ##
-      sleepSeconds: 60
-
-    ## ConfigMap name for log agent configuration
-    ##
-    configName: osmo-log-agent-config
-
-
-    ## CloudWatch logging configuration
-    ##
-    cloudwatch:
-      enabled: false
-      region: us-west-2
-      clusterName: ""
-
-    ## Resource limits and requests for log agent containers
-    ##
-    resources:
-      requests:
-        cpu: "250m"
-        memory: "400Mi"
-      limits:
-        memory: "400Mi"
-
-    ## Extra volume mounts for log agent
-    ##
-    extraVolumeMounts: []
-
-    ## Extra volumes for log agent
-    ##
-    volumes: []
-
-  ## OpenTelemetry (OTEL) configuration for observability
-  ##
-  otel:
-    ## Enable OTEL collector sidecar for metrics and tracing
-    ##
-    enabled: true
-
-    ## OTEL collector container image
-    ##
-    image: otel/opentelemetry-collector-contrib:0.68.0
-
-    ## ConfigMap name for OTEL collector configuration
-    ##
-    configName: otel-config
-
-    ## Resource limits and requests for OTEL containers
-    ##
-    resources:
-      requests:
-        cpu: "100m"
-        memory: "128Mi"
-      limits:
-        memory: "128Mi"
-
-    ## Ports for OTEL collector
-    ##
-    ports:
-      - containerPort: 4000
-        name: metrics
 
   ## Rate limiting service configuration
   ##

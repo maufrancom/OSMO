@@ -290,26 +290,11 @@ Any field from `sidecars.envoy` can be overridden at the service level. Fields n
 | `sidecars.envoy.osmoauth.address` | OSMO auth service address | `osmo-service` |
 | `sidecars.envoy.osmoauth.port` | OSMO auth service port | `80` |
 
-
-#### Log Agent Settings
-
-| Parameter | Description | Default |
-|-----------|-------------|---------|
-| `sidecars.logAgent.enabled` | Enable log agent sidecar | `true` |
-| `sidecars.logAgent.image` | Log agent image | `fluent/fluent-bit:4.0.8-debug` |
-| `sidecars.logAgent.prometheusPort` | Prometheus metrics port | `2020` |
-| `sidecars.logAgent.configName` | Log agent config name | `osmo-log-agent-config` |
-| `sidecars.logAgent.cloudwatch.enabled` | Enable CloudWatch logging | `false` |
-| `sidecars.logAgent.cloudwatch.region` | AWS region for CloudWatch | `us-west-2` |
-| `sidecars.logAgent.cloudwatch.clusterName` | Cluster name for CloudWatch | `""` |
-
-#### OpenTelemetry Settings
+#### Prometheus Metrics Settings
 
 | Parameter | Description | Default |
 |-----------|-------------|---------|
-| `sidecars.otel.enabled` | Enable OTEL collector | `true` |
-| `sidecars.otel.image` | OTEL collector image | `otel/opentelemetry-collector-contrib:0.68.0` |
-| `sidecars.otel.configName` | OTEL config name | `otel-config` |
+| `podMonitor.enabled` | Enable PodMonitor for Prometheus scraping (requires `monitoring.coreos.com` CRD) | `true` |
 
 #### Rate Limit Settings
 
@@ -362,7 +347,6 @@ The osmo platform consists of:
 
 ### Sidecar Components
 - **Envoy Proxy**: Advanced traffic routing, authentication
-- **Log Agent**: Centralized log collection and forwarding
 - **OpenTelemetry Collector**: Metrics and tracing collection
 - **Rate Limiter**: API endpoint rate limiting
 
