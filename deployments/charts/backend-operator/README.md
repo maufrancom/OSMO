@@ -98,25 +98,24 @@ This Helm chart deploys the OSMO Backend-Operator for managing compute backend r
 
 #### Backend Listener
 
+The backend listener supports two implementations controlled by the `useV2` flag:
+- **v1 (default)**: Python-based listener (`backend-listener` image)
+- **v2**: Go-based listener (`backend-listener-v2` image)
+
+Set `services.backendListener.useV2: true` to switch to the Go-based listener.
+
+##### Shared Settings
+
 | Parameter | Description | Default |
 |-----------|-------------|---------|
-| `services.backendListener.imageName` | Listener image name | `backend-listener` |
+| `services.backendListener.useV2` | Use Go-based v2 listener instead of Python v1 | `false` |
+| `services.backendListener.imageName` | Listener image name (v2 appends `-v2` automatically) | `backend-listener` |
 | `services.backendListener.imagePullPolicy` | Image pull policy | `Always` |
 | `services.backendListener.serviceName` | Service name | `osmo-backend-listener` |
 | `services.backendListener.initContainers` | Init containers for backend listener | `[]` |
 | `services.backendListener.serviceAccount` | Service account name | `backend-listener` |
 | `services.backendListener.maxUnackedMessages` | Maximum number of unacknowledged messages | `100` |
-| `services.backendListener.resyncPeriodSec` | Resync period in seconds for Kubernetes informer | `300` |
-| `services.backendListener.stateCacheTTLMin` | Time-to-live for state cache entries (in minutes) | `15` |
-| `services.backendListener.usageFlushIntervalSec` | Usage flush interval in seconds for resource usage updates | `15` |
-| `services.backendListener.progressDir` | Directory to write progress timestamps to (for liveness/startup probes) | `/tmp/osmo/operator` |
-| `services.backendListener.progressFrequencySec` | Progress frequency in seconds (for periodic progress reporting when idle) | `15` |
-| `services.backendListener.eventChanSize` | Buffer size for event channel (EventListener) | `500` |
-| `services.backendListener.eventCacheTTLMin` | Event deduplication cache TTL in minutes | `15` |
 | `services.backendListener.enableNodeLabelUpdate` | Enable updating node verified label based on availability | `false` |
-| `services.backendListener.labelUpdateChanSize` | Buffer size for label update channel | `200` |
-| `services.backendListener.metrics.component` | Service component name for metrics | `osmo-backend-listener` |
-| `services.backendListener.metrics.version` | Service version for metrics (defaults to image tag if empty) | `""` |
 | `services.backendListener.extraArgs` | Additional command line arguments | `[]` |
 | `services.backendListener.extraEnvs` | Additional environment variables | `[]` |
 | `services.backendListener.extraPodAnnotations` | Additional pod annotations | `{}` |
@@ -129,6 +128,29 @@ This Helm chart deploys the OSMO Backend-Operator for managing compute backend r
 | `services.backendListener.resources.requests.cpu` | CPU requests | `1` |
 | `services.backendListener.resources.requests.memory` | Memory requests | `2Gi` |
 | `services.backendListener.resources.limits.memory` | Memory limits | `2Gi` |
+
+##### V1 (Python) Settings
+
+| Parameter | Description | Default |
+|-----------|-------------|---------|
+| `services.backendListener.podCacheTtl` | Time-to-live for pod cache entries (in seconds) | `15` |
+| `services.backendListener.apiQps` | Kubernetes API client QPS setting | `20` |
+| `services.backendListener.apiBurst` | Kubernetes API client burst setting | `30` |
+
+##### V2 (Go) Settings
+
+| Parameter | Description | Default |
+|-----------|-------------|---------|
+| `services.backendListener.resyncPeriodSec` | Resync period in seconds for Kubernetes informer | `300` |
+| `services.backendListener.stateCacheTTLMin` | Time-to-live for state cache entries (in minutes) | `15` |
+| `services.backendListener.usageFlushIntervalSec` | Usage flush interval in seconds for resource usage updates | `15` |
+| `services.backendListener.progressDir` | Directory to write progress timestamps to (for liveness/startup probes) | `/tmp/osmo/operator` |
+| `services.backendListener.progressFrequencySec` | Progress frequency in seconds (for periodic progress reporting when idle) | `15` |
+| `services.backendListener.eventChanSize` | Buffer size for event channel (EventListener) | `500` |
+| `services.backendListener.eventCacheTTLMin` | Event deduplication cache TTL in minutes | `15` |
+| `services.backendListener.labelUpdateChanSize` | Buffer size for label update channel | `200` |
+| `services.backendListener.metrics.component` | Service component name for metrics | `osmo-backend-listener` |
+| `services.backendListener.metrics.version` | Service version for metrics (defaults to image tag if empty) | `""` |
 
 #### Backend Worker
 
