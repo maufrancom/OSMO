@@ -36,6 +36,8 @@ spec:
                  {{ .Values.services.service.serviceName }},
                  {{ .Values.services.worker.serviceName }},
                  {{ .Values.services.logger.serviceName }},
-                 {{ .Values.services.delayedJobMonitor.serviceName }}]
+                 {{ .Values.services.delayedJobMonitor.serviceName }},
+                 {{ .Values.services.messageWorker.serviceName }},
+                 {{ .Values.services.operator.serviceName }}]
       }
 {{- end }}
