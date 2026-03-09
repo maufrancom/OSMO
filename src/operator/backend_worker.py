@@ -254,6 +254,7 @@ async def main():
 
     job_queue: asyncio.Queue = asyncio.Queue()
     worker = BackendWorker(config)
+    worker.backend_metrics.start_server()
     while True:
         try:
             async with websockets.connect( # type: ignore

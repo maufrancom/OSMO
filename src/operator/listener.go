@@ -64,7 +64,7 @@ func main() {
 			log.Printf("Failed to initialize metrics: %v", err)
 			inst = utils.NewNoopInstruments()
 		} else {
-			log.Printf("OpenTelemetry metrics initialized: endpoint=%s", cmdArgs.Metrics.OTLPEndpoint)
+			log.Printf("Prometheus metrics initialized on port %d", cmdArgs.Metrics.PrometheusPort)
 		}
 	} else {
 		inst = utils.NewNoopInstruments()

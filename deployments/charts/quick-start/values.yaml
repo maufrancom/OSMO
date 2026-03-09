@@ -593,6 +593,11 @@ service:
           done
           echo "Localstack S3 is ready"
 
+  ## PodMonitor configuration (requires Prometheus Operator / monitoring.coreos.com CRD)
+  ##
+  podMonitor:
+    enabled: false
+
   ## Configuration for service sidecar containers
   ##
   sidecars:
@@ -600,24 +605,6 @@ service:
     ##
     envoy:
       ## Enable Envoy proxy sidecar container
-      ##
-      enabled: false
-    ## Log agent sidecar configuration
-    ##
-    logAgent:
-      ## Enable log agent sidecar for centralized log collection
-      ##
-      enabled: false
-      ## Log rotation configuration
-      ##
-      logrotate:
-        ## Enable automatic log rotation
-        ##
-        enabled: false
-    ## OpenTelemetry (OTEL) sidecar configuration
-    ##
-    otel:
-      ## Enable OTEL collector sidecar for metrics and tracing
       ##
       enabled: false
     ## OAuth2 Proxy sidecar configuration
@@ -777,12 +764,6 @@ router:
       ## Enable Envoy proxy sidecar container
       ##
       enabled: false
-    ## Log agent sidecar configuration
-    ##
-    logAgent:
-      ## Enable log agent sidecar for centralized log collection
-      ##
-      enabled: false
     ## OAuth2 Proxy sidecar configuration
     ##
     oauth2Proxy:
@@ -930,6 +911,11 @@ backend-operator:
           cpu: "250m"
           memory: "256Mi"
 
+  ## PodMonitor configuration (requires Prometheus Operator / monitoring.coreos.com CRD)
+  ##
+  podMonitor:
+    enabled: false
+
   ## Backend test runner configuration
   ##
   backendTestRunner:
@@ -937,12 +923,3 @@ backend-operator:
     ##
     enabled: false
 
-  ## Configuration for backend operator sidecar containers
-  ##
-  sidecars:
-    ## OpenTelemetry (OTEL) sidecar configuration
-    ##
-    OTEL:
-      ## Enable OTEL collector sidecar for metrics and tracing
-      ##
-      enabled: false

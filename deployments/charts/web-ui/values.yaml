@@ -365,6 +365,25 @@ services:
       periodSeconds: 5
 
 
+  ## Redis cache service configuration
+  ##
+  redis:
+    ## Kubernetes service name for Redis (leave empty to use in-memory session store)
+    ##
+    serviceName: ""
+
+    ## Redis service port
+    ##
+    port: 6379
+
+    ## Redis database number to use (0-15)
+    ##
+    dbNumber: 0
+
+    ## Enable TLS encryption for Redis connections
+    ##
+    tlsEnabled: false
+
 ## Configuration for sidecar containers
 ##
 sidecars:
@@ -598,6 +617,10 @@ sidecars:
     ##
     passAccessToken: false
 
+    ## Use Redis (services.redis) as the session store instead of in-memory
+    ##
+    redisSessionStore: false
+
     ## Use Kubernetes secrets for credentials
     ##
     useKubernetesSecrets: false
@@ -648,75 +671,6 @@ sidecars:
         memory: "64Mi"
       limits:
         memory: "128Mi"
-
-  ## Log agent sidecar configuration (FluentBit)
-  ## Collects and forwards logs from the application and Envoy
-  ##
-  logAgent:
-    ## Enable log agent sidecar container
-    ##
-    enabled: false
-
-    ## Log rotation configuration
-    ## logAgent.enabled must be true for logrotate to be enabled
-    ##
-    logrotate:
-      enabled: false
-
-      ## How often to rotate the logs. Valid options are:
-      ## - daily, hourly, monthly, weekly, yearly
-      ## - `minutes <size>` - rotate every <size> minutes
-      ##
-      frequency: hourly
-
-      ## Log files are rotated when they reach this size
-      ##
-      maxSize: 10M
-
-      ## How many log files to rotate before deleting the oldest one
-      ##
-      rotateCount: 5
-
-      ## How many seconds to sleep between rotations
-      ##
-      sleepSeconds: 60
-
-    ## FluentBit image configuration
-    ##
-    image:
-      repository: fluent/fluent-bit:4.0.8-debug
-      pullPolicy: IfNotPresent
-
-    ## FluentBit Prometheus metrics port
-    ##
-    fluentBitPrometheusPort: 2020
-
-    ## AWS CloudWatch logging configuration
-    ##
-    aws:
-      region: us-west-2
-      clusterName: ""
-
-
-    ## Resource limits and requests for log agent container
-    ##
-    resources:
-      requests:
-        cpu: "250m"
-        memory: "400Mi"
-      limits:
-        memory: "400Mi"
-
-    ## Additional volumes for log agent
-    ##
-    volumes: []
-
-    ## Additional volume mounts for log agent
-    ##
-    volumeMounts:
-    - name: logs
-      mountPath: /var/log
-
 
 ## Additional ConfigMaps to create
 ##

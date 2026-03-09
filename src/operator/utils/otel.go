@@ -20,28 +20,32 @@ import (
 	"context"
 	"flag"
 	"fmt"
-	"time"
+	"log"
+	"net/http"
 
 	"go.opentelemetry.io/otel"
-	"go.opentelemetry.io/otel/exporters/otlp/otlpmetric/otlpmetricgrpc"
+	"go.opentelemetry.io/otel/exporters/prometheus"
 	sdkmetric "go.opentelemetry.io/otel/sdk/metric"
 	"go.opentelemetry.io/otel/sdk/resource"
 	semconv "go.opentelemetry.io/otel/semconv/v1.21.0"
+
+	promclient "github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 
 	sharedutils "go.corp.nvidia.com/osmo/utils"
 )
 
 // OTELConfig holds configuration for the OpenTelemetry metrics pipeline.
 type OTELConfig struct {
-	OTLPEndpoint     string
-	ExportIntervalMS int
-	ServiceName      string
-	ServiceVersion   string
-	Enabled          bool
+	PrometheusPort int
+	ServiceName    string
+	ServiceVersion string
+	Enabled        bool
 }
 
-// InitOTEL initialises the OTLP metric pipeline, sets the global MeterProvider,
-// and returns pre-created instrument handles plus a shutdown function.
+// InitOTEL initialises the Prometheus metric pipeline, sets the global MeterProvider,
+// starts the Prometheus scrape endpoint, and returns pre-created instrument handles
+// plus a shutdown function.
 //
 // On success the caller must invoke the returned shutdown function (typically via
 // defer) to flush pending metrics before process exit.
@@ -49,12 +53,10 @@ type OTELConfig struct {
 // On error the caller should fall back to NewNoopInstruments() so that call sites
 // never need nil checks.
 func InitOTEL(ctx context.Context, config OTELConfig) (*Instruments, func(context.Context) error, error) {
-	exporter, err := otlpmetricgrpc.New(ctx,
-		otlpmetricgrpc.WithEndpoint(config.OTLPEndpoint),
-		otlpmetricgrpc.WithInsecure(),
-	)
+	registry := promclient.NewRegistry()
+	exporter, err := prometheus.New(prometheus.WithRegisterer(registry))
 	if err != nil {
-		return nil, nil, fmt.Errorf("failed to create OTLP exporter: %w", err)
+		return nil, nil, fmt.Errorf("failed to create Prometheus exporter: %w", err)
 	}
 
 	res, err := resource.New(ctx,
@@ -68,10 +70,7 @@ func InitOTEL(ctx context.Context, config OTELConfig) (*Instruments, func(contex
 	}
 
 	provider := sdkmetric.NewMeterProvider(
-		sdkmetric.WithReader(sdkmetric.NewPeriodicReader(
-			exporter,
-			sdkmetric.WithInterval(time.Duration(config.ExportIntervalMS)*time.Millisecond),
-		)),
+		sdkmetric.WithReader(exporter),
 		sdkmetric.WithResource(res),
 	)
 
@@ -83,17 +82,35 @@ func InitOTEL(ctx context.Context, config OTELConfig) (*Instruments, func(contex
 		return nil, nil, fmt.Errorf("failed to create instruments: %w", err)
 	}
 
-	return inst, provider.Shutdown, nil
+	// Start Prometheus scrape endpoint
+	mux := http.NewServeMux()
+	mux.Handle("/metrics", promhttp.HandlerFor(registry, promhttp.HandlerOpts{}))
+	server := &http.Server{
+		Addr:    fmt.Sprintf("0.0.0.0:%d", config.PrometheusPort),
+		Handler: mux,
+	}
+	go func() {
+		if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			log.Printf("Prometheus metrics server error: %v", err)
+		}
+	}()
+
+	shutdown := func(ctx context.Context) error {
+		if shutdownErr := server.Shutdown(ctx); shutdownErr != nil {
+			log.Printf("Error shutting down Prometheus server: %v", shutdownErr)
+		}
+		return provider.Shutdown(ctx)
+	}
+
+	return inst, shutdown, nil
 }
 
 // otelFlagPointers holds pointers to flag values for OTEL configuration.
 type otelFlagPointers struct {
-	enable     *bool
-	host       *string
-	port       *int
-	intervalMS *int
-	component  *string
-	version    *string
+	enable         *bool
+	prometheusPort *int
+	component      *string
+	version        *string
 }
 
 // RegisterOTELFlags registers OpenTelemetry metrics command-line flags and
@@ -103,15 +120,9 @@ func RegisterOTELFlags(defaultComponent string) func() OTELConfig {
 		enable: flag.Bool("metricsOtelEnable",
 			sharedutils.GetEnvBool("METRICS_OTEL_ENABLE", false),
 			"Enable OpenTelemetry metrics"),
-		host: flag.String("metricsOtelCollectorHost",
-			sharedutils.GetEnv("METRICS_OTEL_COLLECTOR_HOST", "127.0.0.1"),
-			"OpenTelemetry collector host"),
-		port: flag.Int("metricsOtelCollectorPort",
-			sharedutils.GetEnvInt("METRICS_OTEL_COLLECTOR_PORT", 4317),
-			"OpenTelemetry collector port"),
-		intervalMS: flag.Int("metricsOtelCollectorIntervalInMillis",
-			sharedutils.GetEnvInt("METRICS_OTEL_COLLECTOR_INTERVAL_IN_MILLIS", 6000),
-			"OpenTelemetry export interval in milliseconds"),
+		prometheusPort: flag.Int("metricsPrometheusPort",
+			sharedutils.GetEnvInt("METRICS_PROMETHEUS_PORT", 9464),
+			"Port on which the Prometheus scrape endpoint is exposed"),
 		component: flag.String("metricsOtelCollectorComponent",
 			sharedutils.GetEnv("METRICS_OTEL_COLLECTOR_COMPONENT", defaultComponent),
 			"Service name for OpenTelemetry metrics"),
@@ -122,11 +133,10 @@ func RegisterOTELFlags(defaultComponent string) func() OTELConfig {
 
 	return func() OTELConfig {
 		return OTELConfig{
-			OTLPEndpoint:     fmt.Sprintf("%s:%d", *ptrs.host, *ptrs.port),
-			ExportIntervalMS: *ptrs.intervalMS,
-			ServiceName:      *ptrs.component,
-			ServiceVersion:   *ptrs.version,
-			Enabled:          *ptrs.enable,
+			PrometheusPort: *ptrs.prometheusPort,
+			ServiceName:    *ptrs.component,
+			ServiceVersion: *ptrs.version,
+			Enabled:        *ptrs.enable,
 		}
 	}
 }

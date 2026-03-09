@@ -37,9 +37,6 @@ spec:
         {{- toYaml . | nindent 8 }}
         {{- end }}
       annotations:
-      {{- if .Values.sidecars.OTEL.enabled }}
-        sidecar.opentelemetry.io/inject: "true"
-      {{- end}}
       {{- with .Values.services.backendListener.extraPodAnnotations }}
       {{- toYaml . | nindent 8 }}
       {{- end }}
@@ -76,6 +73,9 @@ spec:
             drop: ["ALL"]
           runAsNonRoot: true
           runAsUser: 1001
+        ports:
+        - name: metrics
+          containerPort: 9464
         command:
         - listener
         args:
@@ -112,13 +112,9 @@ spec:
         - '--enableNodeLabelUpdate={{ .Values.services.backendListener.enableNodeLabelUpdate }}'
         - --labelUpdateChanSize
         - '{{ .Values.services.backendListener.labelUpdateChanSize }}'
-        - '--metricsOtelEnable={{ .Values.sidecars.OTEL.enabled }}'
+        - '--metricsOtelEnable=true'
         - --serviceVersion
         - '{{ .Values.services.backendListener.metrics.version | default .Values.global.osmoImageTag }}'
-        - --metricsOtelCollectorHost
-        - '{{ .Values.sidecars.OTEL.host }}'
-        - --metricsOtelCollectorPort
-        - '{{ include "backend-operator.otel.getPort" (dict "root" . "portName" "otlp-grpc") }}'
         {{- range $arg := .Values.services.backendListener.extraArgs }}
         - {{$arg | quote}}
         {{- end }}
@@ -162,9 +158,6 @@ spec:
           timeoutSeconds: 15
           initialDelaySeconds: 10
 
-      {{- if .Values.sidecars.OTEL.enabled }}
-      {{- include "backend-operator.injectOTEL" . | nindent 6}}
-      {{- end }}
       {{- with .Values.services.backendListener.extraSidecarContainers }}
       {{- toYaml . | nindent 6 }}
       {{- end }}
@@ -178,7 +171,4 @@ spec:
           items:
             - key: {{ .Values.global.accountTokenSecretKey }}
               path: token.txt
-      {{- if .Values.sidecars.OTEL.enabled }}
-        {{- include "backend-operator.OTELVolumes" (dict "Values" .Values "Prefix" $name) | nindent 6 }}
-      {{- end }}
 {{- end }}

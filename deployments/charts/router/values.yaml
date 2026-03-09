@@ -279,6 +279,25 @@ services:
     ##
     password: ""
 
+  ## Redis cache service configuration
+  ##
+  redis:
+    ## Kubernetes service name for Redis (leave empty to use in-memory session store)
+    ##
+    serviceName: ""
+
+    ## Redis service port
+    ##
+    port: 6379
+
+    ## Redis database number to use (0-15)
+    ##
+    dbNumber: 0
+
+    ## Enable TLS encryption for Redis connections
+    ##
+    tlsEnabled: false
+
 ## Configuration for sidecar containers
 ##
 sidecars:
@@ -496,6 +515,10 @@ sidecars:
     ##
     passAccessToken: false
 
+    ## Use Redis (services.redis) as the session store instead of in-memory
+    ##
+    redisSessionStore: false
+
     ## Use Kubernetes secrets for credentials
     ##
     useKubernetesSecrets: false
@@ -537,78 +560,6 @@ sidecars:
         memory: "64Mi"
       limits:
         memory: "128Mi"
-
-  ## Log agent sidecar configuration for centralized logging on AWS CloudWatch
-  ##
-  logAgent:
-    ## Enable log agent sidecar container
-    ##
-    enabled: true
-
-    ## Log agent container image
-    ##
-    image: "fluent/fluent-bit:4.0.8-debug"
-
-    ## Image pull policy for log agent container
-    ##
-    imagePullPolicy: IfNotPresent
-
-    ## Port for Prometheus metrics
-    ##
-    prometheusPort: 2020
-
-    ## Name of the ConfigMap containing log agent configuration
-    ##
-    configName: router-log-agent-config
-
-    ## Log rotation configuration
-    ##
-    logrotate:
-      ## Enable log rotation for managing log file sizes
-      ##
-      enabled: true
-
-      ## How often to rotate the logs
-      ##
-      frequency: hourly
-
-      ## Log files are rotated when they reach this size
-      ##
-      maxSize: 10M
-
-      ## How many log files to rotate before deleting the oldest one
-      ##
-      rotateCount: 5
-
-
-    ## AWS CloudWatch logging configuration
-    ##
-    cloudwatch:
-
-      ## AWS region for CloudWatch
-      ##
-      region: us-west-2
-
-      ## Cluster name for CloudWatch log grouping
-      ##
-      clusterName: ""
-
-      ## IAM role ARN for CloudWatch access
-      ##
-      role: ""
-
-    ## Resource limits and requests for log agent container
-    ##
-    resources:
-      requests:
-        cpu: "250m"
-        memory: "400Mi"
-      limits:
-        memory: "400Mi"
-
-    ## Additional volume mounts for the log agent container
-    ##
-    extraVolumeMounts: []
 
   ## Authorization sidecar configuration (role-based access control)
   ## Implements Envoy External Authorization API for PostgreSQL-backed RBAC
