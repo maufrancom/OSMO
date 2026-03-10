@@ -1,4 +1,4 @@
-# SPDX-FileCopyrightText: Copyright (c) 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-FileCopyrightText: Copyright (c) 2025-2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -13,7 +13,7 @@
 # limitations under the License.
 #
 # SPDX-License-Identifier: Apache-2.0
-{{- if and .Values.global.enableNonClusterRoles (not .Values.services.backendListener.useV2) }}
+{{- if and .Values.global.enableNonClusterRoles .Values.services.backendListener.useV2 }}
 
 {{$name := or .Values.global.name .Release.Name }}
 
@@ -65,7 +65,7 @@ spec:
       tolerations: {{ toYaml .Values.global.tolerations | nindent 8 }}
       containers:
       - name: backend-listener
-        image: {{ .Values.global.osmoImageLocation }}/{{ .Values.services.backendListener.imageName }}:{{ .Values.global.osmoImageTag }}
+        image: {{ .Values.global.osmoImageLocation }}/{{ .Values.services.backendListener.imageName }}-v2:{{ .Values.global.osmoImageTag }}
         imagePullPolicy: {{ .Values.services.backendListener.imagePullPolicy }}
         securityContext:
           allowPrivilegeEscalation: false
@@ -77,47 +77,44 @@ spec:
         - name: metrics
           containerPort: 9464
         command:
-        - backend_listener
+        - listener
         args:
-        - --host
+        - --serviceURL
+        {{- if .Values.global.serviceGrpcPort }}
+        - {{ .Values.global.serviceUrl }}:{{ .Values.global.serviceGrpcPort }}
+        {{- else }}
         - {{ .Values.global.serviceUrl }}
-        {{- if eq .Values.global.loginMethod "password" }}
-        - --username
-        - {{ .Values.global.accountUsername }}
-        - --password_file
-        - /opt/osmo/secrets/password.txt
-        {{- else if eq .Values.global.loginMethod "token" }}
-        - --token_file
-        - /opt/osmo/secrets/token.txt
         {{- end }}
-        - --login_method
-        - {{ .Values.global.loginMethod }}
+        - --tokenFile
+        - /opt/osmo/secrets/token.txt
         - --backend
         - {{ .Values.global.backendName }}
         - --namespace
         - {{ .Values.global.backendNamespace }}
-        - --log_level
-        - {{ .Values.global.logs.logLevel }}
-        - --k8s_log_level
-        - {{ .Values.global.logs.k8sLogLevel }}
-        - --metrics_otel_collector_component
-        - {{ $name }}-{{ .Values.services.backendListener.serviceName }}
-        - --metrics_otel_enable
-        - "true"
-        - --enable_node_label_update
-        - '{{ .Values.services.backendListener.enableNodeLabelUpdate }}'
-        - --node_condition_prefix
+        - --nodeConditionPrefix
         - '{{ .Values.global.nodeConditionPrefix }}'
-        - --max_unacked_messages
+        - --maxUnackedMessages
         - '{{ .Values.services.backendListener.maxUnackedMessages }}'
-        - --pod_event_cache_ttl
-        - {{ .Values.services.backendListener.podCacheTtl | quote }}
-        - --include_namespace_usage
-        - {{ .Values.global.includeNamespaceUsage | quote }}
-        - --api_qps
-        - {{ .Values.services.backendListener.apiQps | quote }}
-        - --api_burst
-        - {{ .Values.services.backendListener.apiBurst | quote }}
+        - --resyncPeriodSec
+        - '{{ .Values.services.backendListener.resyncPeriodSec }}'
+        - --stateCacheTTLMin
+        - '{{ .Values.services.backendListener.stateCacheTTLMin }}'
+        - --usageFlushIntervalSec
+        - '{{ .Values.services.backendListener.usageFlushIntervalSec }}'
+        - --progressDir
+        - '{{ .Values.services.backendListener.progressDir }}'
+        - --progressFrequencySec
+        - '{{ .Values.services.backendListener.progressFrequencySec }}'
+        - --eventChanSize
+        - '{{ .Values.services.backendListener.eventChanSize }}'
+        - --eventCacheTTLMin
+        - '{{ .Values.services.backendListener.eventCacheTTLMin }}'
+        - '--enableNodeLabelUpdate={{ .Values.services.backendListener.enableNodeLabelUpdate }}'
+        - --labelUpdateChanSize
+        - '{{ .Values.services.backendListener.labelUpdateChanSize }}'
+        - '--metricsOtelEnable=true'
+        - --serviceVersion
+        - '{{ .Values.services.backendListener.metrics.version | default .Values.global.osmoImageTag }}'
         {{- range $arg := .Values.services.backendListener.extraArgs }}
         - {{$arg | quote}}
         {{- end }}
@@ -127,22 +124,13 @@ spec:
         {{- end }}
         resources:
           {{- toYaml .Values.services.backendListener.resources | nindent 10 }}
-        {{- if or .Values.services.backendListener.volumeMounts (eq .Values.global.loginMethod "password") (eq .Values.global.loginMethod "token") }}
         volumeMounts:
-        {{- if eq .Values.global.loginMethod "password" }}
-        - name: osmo-secret
-          mountPath: /opt/osmo/secrets/password.txt
-          subPath: password.txt
-          readOnly: true
-        {{- else if eq .Values.global.loginMethod "token" }}
         - name: osmo-secret
           mountPath: /opt/osmo/secrets/token.txt
           subPath: token.txt
           readOnly: true
-        {{- end }}
         {{- if .Values.services.backendListener.volumeMounts }}
           {{- toYaml .Values.services.backendListener.volumeMounts | nindent 8 }}
-        {{- end }}
         {{- end }}
 
         livenessProbe:
@@ -152,7 +140,7 @@ spec:
             - --progress_interval
             - "300:300:300:300"
             - --progress_file
-            - /var/run/osmo/last_progress_websocket:/var/run/osmo/last_progress_pod:/var/run/osmo/last_progress_node:/var/run/osmo/last_progress_event
+            - {{ .Values.services.backendListener.progressDir }}/last_progress_workflow_listener:{{ .Values.services.backendListener.progressDir }}/last_progress_node_usage_listener:{{ .Values.services.backendListener.progressDir }}/last_progress_node_listener:{{ .Values.services.backendListener.progressDir }}/last_progress_event_listener
           failureThreshold: 1
           periodSeconds: 30
           timeoutSeconds: 15
@@ -164,7 +152,7 @@ spec:
             - --progress_interval
             - "300:300:300:300"
             - --progress_file
-            - /var/run/osmo/last_progress_websocket:/var/run/osmo/last_progress_pod:/var/run/osmo/last_progress_node:/var/run/osmo/last_progress_event
+            - {{ .Values.services.backendListener.progressDir }}/last_progress_workflow_listener:{{ .Values.services.backendListener.progressDir }}/last_progress_node_usage_listener:{{ .Values.services.backendListener.progressDir }}/last_progress_node_listener:{{ .Values.services.backendListener.progressDir }}/last_progress_event_listener
           failureThreshold: 12
           periodSeconds: 5
           timeoutSeconds: 15
@@ -173,25 +161,14 @@ spec:
       {{- with .Values.services.backendListener.extraSidecarContainers }}
       {{- toYaml . | nindent 6 }}
       {{- end }}
-      {{- if or .Values.services.backendListener.volumes (eq .Values.global.loginMethod "password") (eq .Values.global.loginMethod "token") }}
       volumes:
       {{- if .Values.services.backendListener.volumes }}
         {{- toYaml .Values.services.backendListener.volumes | nindent 6 }}
       {{- end }}
-      {{- if eq .Values.global.loginMethod "password" }}
-      - name: osmo-secret
-        secret:
-          secretName: {{ .Values.global.accountPasswordSecret }}
-          items:
-            - key: {{ .Values.global.accountPasswordSecretKey }}
-              path: password.txt
-      {{- else if eq .Values.global.loginMethod "token" }}
       - name: osmo-secret
         secret:
           secretName: {{ .Values.global.accountTokenSecret }}
           items:
             - key: {{ .Values.global.accountTokenSecretKey }}
               path: token.txt
-      {{- end }}
-      {{- end }}
 {{- end }}

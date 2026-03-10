@@ -242,9 +242,15 @@ services:
   ## Listens for job requests and manages backend cluster state
   ##
   backendListener:
-    ## Docker image name for the backend listener
+    ## Use the Go-based v2 backend listener instead of the Python-based listener
+    ## When false (default), deploys the original Python backend-listener
+    ## When true, deploys the Go-based backend-listener-v2
     ##
-    imageName: backend-listener
+    useV2: false
+
+    ############################
+    ## Shared configuration   ##
+    ############################
 
     ## Kubernetes image pull policy for the backend listener
     ##
@@ -266,52 +272,9 @@ services:
     ##
     maxUnackedMessages: 100
 
-    ## Resync period in seconds for Kubernetes informer
-    ##
-    resyncPeriodSec: 300
-
-    ## Time-to-live for state cache entries (in minutes)
-    ##
-    stateCacheTTLMin: 15
-
-    ## Usage flush interval in seconds for resource usage updates
-    ##
-    usageFlushIntervalSec: 15
-
-    ## Directory to write progress timestamps to (for liveness/startup probes)
-    ##
-    progressDir: /tmp/osmo/operator
-
-    ## Progress frequency in seconds (for periodic progress reporting when idle)
-    ##
-    progressFrequencySec: 15
-
-    ## Buffer size for event channel
-    ##
-    eventChanSize: 500
-
-    ## Time-to-live for event deduplication cache (in minutes)
-    ##
-    eventCacheTTLMin: 15
-
-    ## OpenTelemetry metrics configuration
-    ##
-    metrics:
-      ## Service component name for metrics
-      ##
-      component: "osmo-backend-listener"
-
-      ## Service version (defaults to image tag if not specified)
-      ##
-      version: ""
-
     ## Enable updating node verified label based on availability
     ##
     enableNodeLabelUpdate: false
-
-    ## Buffer size for label update channel
-    ##
-    labelUpdateChanSize: 200
 
     ## Additional command line arguments to pass to the backend listener
     ##
@@ -382,6 +345,73 @@ services:
         memory: "2Gi"
       limits:
         memory: "2Gi"
+
+    ########################################################
+    ## V1 (Python) configuration - remove when deprecating ##
+    ########################################################
+
+    ## Docker image name for the Python backend listener
+    ##
+    imageName: backend-listener
+
+    ## Time-to-live for pod cache entries (in seconds)
+    ##
+    podCacheTtl: 15
+
+    ## Kubernetes API client QPS setting
+    ##
+    apiQps: 20
+
+    ## Kubernetes API client burst setting
+    ##
+    apiBurst: 30
+
+    ########################################################
+    ## V2 (Go) configuration                              ##
+    ########################################################
+
+    ## Resync period in seconds for Kubernetes informer
+    ##
+    resyncPeriodSec: 300
+
+    ## Time-to-live for state cache entries (in minutes)
+    ##
+    stateCacheTTLMin: 15
+
+    ## Usage flush interval in seconds for resource usage updates
+    ##
+    usageFlushIntervalSec: 15
+
+    ## Directory to write progress timestamps to (for liveness/startup probes)
+    ##
+    progressDir: /tmp/osmo/operator
+
+    ## Progress frequency in seconds (for periodic progress reporting when idle)
+    ##
+    progressFrequencySec: 15
+
+    ## Buffer size for event channel
+    ##
+    eventChanSize: 500
+
+    ## Time-to-live for event deduplication cache (in minutes)
+    ##
+    eventCacheTTLMin: 15
+
+    ## Buffer size for label update channel
+    ##
+    labelUpdateChanSize: 200
+
+    ## OpenTelemetry metrics configuration
+    ##
+    metrics:
+      ## Service component name for metrics
+      ##
+      component: "osmo-backend-listener"
+
+      ## Service version (defaults to image tag if not specified)
+      ##
+      version: ""
 
   ## Backend worker configuration
   ## Executes jobs received from the backend listener

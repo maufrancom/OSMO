@@ -456,7 +456,7 @@ oci_load(
 oci_push(
     name = "listener_push_x86_64",
     image = ":listener_image_x86_64",
-    repository = BASE_IMAGE_URL + "backend-listener",
+    repository = BASE_IMAGE_URL + "backend-listener-v2",
     remote_tags = [IMAGE_TAG + "-amd64"] if IMAGE_TAG else None,
     visibility = ["//visibility:public"],
     tags = ["manual"],
@@ -519,7 +519,7 @@ oci_load(
 oci_push(
     name = "listener_push_arm64",
     image = ":listener_image_arm64",
-    repository = BASE_IMAGE_URL + "backend-listener",
+    repository = BASE_IMAGE_URL + "backend-listener-v2",
     remote_tags = [IMAGE_TAG + "-arm64"] if IMAGE_TAG else None,
     visibility = ["//visibility:public"],
     tags = ["manual"],
