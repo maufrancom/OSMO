@@ -1268,6 +1268,33 @@ services:
     envoy:
       service:
         useHttp2: true
+      ## JWT provider overrides for the operator service
+      ## The operator runs in a separate pod, so it must fetch JWKS from the
+      ## osmo-service Kubernetes service (osmoauth cluster) instead of localhost.
+      ##
+      jwt:
+        providers:
+        ## External OAuth provider configuration (provider 1)
+        ##
+        - issuer: ""
+          audience: ""
+          jwks_uri: ""
+          user_claim: unique_name
+          cluster: idp
+        ## External OAuth provider configuration (provider 2)
+        ##
+        - issuer: ""
+          audience: ""
+          jwks_uri: ""
+          user_claim: preferred_username
+          cluster: idp
+        ## Internal Osmo JWT provider configuration
+        ##
+        - issuer: osmo
+          audience: osmo
+          jwks_uri: http://osmo-service/api/auth/keys
+          user_claim: unique_name
+          cluster: osmoauth
 
 ## PodMonitor configuration (requires Prometheus Operator / monitoring.coreos.com CRD)
 ## Set enabled: false if the PodMonitor CRD is not installed in your cluster.
@@ -1697,9 +1724,9 @@ sidecars:
       ##
       - issuer: osmo
         audience: osmo
-        jwks_uri: http://osmo-service/api/auth/keys
+        jwks_uri: http://localhost:8000/api/auth/keys
         user_claim: unique_name
-        cluster: osmoauth
+        cluster: service
 
   ## OAuth2 Proxy sidecar configuration
   ##
