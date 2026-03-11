@@ -90,6 +90,10 @@ func NewBaseListener(
 		log.Printf("[%s] Warning: failed to create progress writer: %v", streamName, err)
 		progressWriter = nil
 	} else {
+		// Write initial progress so the startup probe finds the file immediately
+		if err := progressWriter.ReportProgress(); err != nil {
+			log.Printf("[%s] Warning: failed to write initial progress: %v", streamName, err)
+		}
 		log.Printf("[%s] Progress writer initialized: %s", streamName, progressFile)
 	}
 
