@@ -75,10 +75,12 @@ interface UseUtilizationDataParams {
   displayEndMs: number;
 }
 
-export function useUtilizationData({
-  displayStartMs,
-  displayEndMs,
-}: UseUtilizationDataParams): UtilizationResult & { isLoading: boolean; granularityMs: number } {
+export function useUtilizationData({ displayStartMs, displayEndMs }: UseUtilizationDataParams): UtilizationResult & {
+  isLoading: boolean;
+  granularityMs: number;
+  error: Error | null;
+  refetch: () => void;
+} {
   const rangeMs = displayEndMs - displayStartMs;
   const tier: FetchTier = selectTier(rangeMs);
   const tierMs = TIER_MS[tier];

@@ -86,12 +86,9 @@ const ChartStyle = ({ id, config }: { id: string; config: ChartConfig }) => {
     return null;
   }
 
-  return (
-    <style
-      dangerouslySetInnerHTML={{
-        __html: Object.entries(THEMES)
-          .map(
-            ([theme, prefix]) => `
+  const cssString = Object.entries(THEMES)
+    .map(
+      ([theme, prefix]) => `
 ${prefix} [data-chart=${id}] {
 ${colorConfig
   .map(([key, itemConfig]) => {
@@ -101,11 +98,10 @@ ${colorConfig
   .filter(Boolean)
   .join("\n")}
 }`,
-          )
-          .join("\n"),
-      }}
-    />
-  );
+    )
+    .join("\n");
+
+  return <style>{cssString}</style>;
 };
 
 const ChartTooltip = RechartsPrimitive.Tooltip;
@@ -322,3 +318,9 @@ function getPayloadConfigFromPayload(config: ChartConfig, payload: unknown, key:
 
 export { ChartContainer, ChartTooltip, ChartTooltipContent, ChartLegend, ChartLegendContent, ChartStyle, useChart };
 export type { ChartConfig };
+
+export const Area = RechartsPrimitive.Area;
+export const AreaChart = RechartsPrimitive.AreaChart;
+export const CartesianGrid = RechartsPrimitive.CartesianGrid;
+export const XAxis = RechartsPrimitive.XAxis;
+export const YAxis = RechartsPrimitive.YAxis;

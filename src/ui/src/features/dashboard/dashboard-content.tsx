@@ -28,7 +28,12 @@ import { cn } from "@/lib/utils";
 import { getStatusDisplay, STATUS_STYLES } from "@/lib/workflows/workflow-constants";
 import { WORKFLOW_STATUS_ICONS } from "@/lib/workflows/workflow-status-icons";
 import { STATUS_PRESETS } from "@/lib/workflows/workflow-status-presets";
-import { UtilizationChart } from "@/components/utilization-chart/utilization-chart";
+import dynamic from "next/dynamic";
+
+const UtilizationChart = dynamic(
+  () => import("@/components/utilization-chart/utilization-chart").then((m) => ({ default: m.UtilizationChart })),
+  { ssr: false },
+);
 
 interface DashboardContentProps {
   /** Server-computed 24h cutoff (ISO string) — ensures query key matches between SSR and client */

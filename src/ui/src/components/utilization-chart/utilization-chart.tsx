@@ -16,10 +16,19 @@
 
 "use client";
 
-import { useState, useMemo, useCallback } from "react";
-import { Area, AreaChart, CartesianGrid, XAxis, YAxis } from "recharts";
+import { useState, useReducer, useMemo, useCallback } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/shadcn/card";
-import { ChartContainer, ChartTooltip, ChartTooltipContent, type ChartConfig } from "@/components/shadcn/chart";
+import {
+  Area,
+  AreaChart,
+  CartesianGrid,
+  XAxis,
+  YAxis,
+  ChartContainer,
+  ChartTooltip,
+  ChartTooltipContent,
+  type ChartConfig,
+} from "@/components/shadcn/chart";
 import { Skeleton } from "@/components/shadcn/skeleton";
 import { Popover, PopoverTrigger, PopoverContent } from "@/components/shadcn/popover";
 import { InlineErrorBoundary } from "@/components/error/inline-error-boundary";
@@ -102,14 +111,34 @@ function rangeFromPreset(key: PresetKey): { start: number; end: number } {
   return { start: end - ms, end };
 }
 
-export function UtilizationChart() {
-  const [activePreset, setActivePreset] = useState<PresetKey | null>(DEFAULT_PRESET);
-  const [activeMetric, setActiveMetric] = useState<MetricKey>("gpu");
-  const [range, setRange] = useState(rangeFromPreset(DEFAULT_PRESET));
-  const [popoverOpen, setPopoverOpen] = useState(false);
-  const [customFrom, setCustomFrom] = useState("");
-  const [customTo, setCustomTo] = useState("");
+type RangeState =
+  | { preset: PresetKey; range: { start: number; end: number }; from: ""; to: "" }
+  | { preset: null; range: { start: number; end: number }; from: string; to: string };
 
+type RangeAction =
+  | { type: "preset"; key: PresetKey }
+  | { type: "custom"; range: { start: number; end: number }; from: string; to: string };
+
+function rangeReducer(_: RangeState, action: RangeAction): RangeState {
+  switch (action.type) {
+    case "preset":
+      return { preset: action.key, range: rangeFromPreset(action.key), from: "", to: "" };
+    case "custom":
+      return { preset: null, range: action.range, from: action.from, to: action.to };
+  }
+}
+
+export function UtilizationChart() {
+  const [rangeState, dispatchRange] = useReducer(rangeReducer, null, () => ({
+    preset: DEFAULT_PRESET,
+    range: rangeFromPreset(DEFAULT_PRESET),
+    from: "" as const,
+    to: "" as const,
+  }));
+  const [activeMetric, setActiveMetric] = useState<MetricKey>("gpu");
+  const [popoverOpen, setPopoverOpen] = useState(false);
+
+  const { range } = rangeState;
   const displayStartMs = range.start;
   const displayEndMs = range.end;
 
@@ -130,22 +159,17 @@ export function UtilizationChart() {
     return result;
   }, [buckets, granularityMs]);
 
-  const isCustom = activePreset === null;
+  const isCustom = rangeState.preset === null;
 
   const handlePresetClick = useCallback((key: PresetKey) => {
-    setActivePreset(key);
-    setRange(rangeFromPreset(key));
-    setCustomFrom("");
-    setCustomTo("");
+    dispatchRange({ type: "preset", key });
   }, []);
 
   const handleCustomCommit = useCallback((result: DateRangePickerResult) => {
     const parsed = parseDateRangeValue(result.value);
     if (parsed && parsed.end > parsed.start) {
-      setActivePreset(null);
-      setRange({ start: parsed.start.getTime(), end: parsed.end.getTime() });
-      setCustomFrom(result.value.split("..")[0] ?? "");
-      setCustomTo(result.value.split("..")[1] ?? "");
+      const [from = "", to = ""] = result.value.split("..");
+      dispatchRange({ type: "custom", range: { start: parsed.start.getTime(), end: parsed.end.getTime() }, from, to });
       setPopoverOpen(false);
     }
   }, []);
@@ -167,7 +191,7 @@ export function UtilizationChart() {
                     className={cn(
                       "px-2.5 py-1 text-xs font-medium transition-colors",
                       "first:rounded-l-md last:rounded-r-md",
-                      !isCustom && activePreset === p.key
+                      !isCustom && rangeState.preset === p.key
                         ? "bg-zinc-900 text-white dark:bg-zinc-100 dark:text-zinc-900"
                         : "text-zinc-500 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-zinc-100",
                     )}
@@ -198,8 +222,8 @@ export function UtilizationChart() {
                   align="start"
                 >
                   <DateRangePicker
-                    initialFrom={customFrom}
-                    initialTo={customTo}
+                    initialFrom={rangeState.from}
+                    initialTo={rangeState.to}
                     onCommit={handleCustomCommit}
                   />
                 </PopoverContent>
