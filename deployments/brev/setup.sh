@@ -181,6 +181,18 @@ print_status "Configuring nvidia-ctk runtime..."
 sudo nvidia-ctk runtime configure --runtime=docker --set-as-default --cdi.enabled
 sudo nvidia-ctk config --set accept-nvidia-visible-devices-as-volume-mounts=true --in-place
 sudo nvidia-ctk config --set accept-nvidia-visible-devices-envvar-when-unprivileged=false --in-place
+
+# Move Docker data-root to /ephemeral to prevent root disk exhaustion during workflow execution.
+# Workflows pull large container images that can fill /var/lib/docker on the root partition.
+print_status "Configuring Docker data-root to /ephemeral/docker..."
+sudo mkdir -p /ephemeral/var/lib/docker
+if [ -f /etc/docker/daemon.json ]; then
+    sudo jq '. + {"data-root": "/ephemeral/var/lib/docker"}' /etc/docker/daemon.json | sudo tee /etc/docker/daemon.json.tmp > /dev/null
+    sudo mv /etc/docker/daemon.json.tmp /etc/docker/daemon.json
+else
+    echo '{"data-root": "/ephemeral/var/lib/docker"}' | sudo tee /etc/docker/daemon.json > /dev/null
+fi
+
 print_status "Restarting Docker..."
 sudo systemctl restart docker
 
