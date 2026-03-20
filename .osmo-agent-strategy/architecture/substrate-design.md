@@ -235,37 +235,42 @@ This is the K8s/Linux model. The project is fully open. NVIDIA benefits from dee
 
 The POC proves the framework end-to-end on a real task: migrating OSMO from Pydantic v1 (1.10.26) to v2 (2.12.5) across 68 files, 212 BaseModel subclasses, 657 usages.
 
-### System Architecture
+### System Architecture (OSMO-Native)
 
 ```
-┌─────────────┐         ┌──────────────────────┐
-│   Human     │         │   Object Storage     │
-│  (Web UI)   │◄───────►│   (S3 bucket)        │
-│  static SPA │  read/  │                      │
-└─────────────┘  write  │  /tasks/             │
-                        │  /questions/          │
-                        │  /subtasks/           │
-                        │  /progress/           │
-                        │  /interventions/      │
-                        │  /artifacts/          │
-                        └──────────┬───────────┘
-                                   │ read/write
-                        ┌──────────▼───────────┐
-                        │  Agent Orchestrator   │
-                        │  (ephemeral compute)  │
-                        │  ┌─ Coordinator ────┐ │
-                        │  │ DIF scripts      │ │
-                        │  └───────┬──────────┘ │
-                        │  ┌───────▼──────────┐ │
-                        │  │ Sub-agents (LLM)  │ │
-                        │  └──────────────────┘ │
-                        └───────────────────────┘
+┌─────────────────────────────────────────────────────┐
+│  OSMO Workflow: "agent-orchestrator"                │
+│                                                      │
+│  Task: orchestrator (Claude Code + OSMO CLI + git)  │
+│  ┌──────────────────────────────────────────────┐   │
+│  │  discovery.sh → planner.sh → orchestrator.sh │   │
+│  │       │                                       │   │
+│  │       └─► osmo workflow submit (per module)  │   │
+│  │           osmo workflow query (poll)          │   │
+│  │           git pull (get changes)             │   │
+│  │           quality-gate.sh (validate)         │   │
+│  └──────────────────────────────────────────────┘   │
+│         │                                            │
+│         ▼  submits child workflows                   │
+│  ┌──────────┐ ┌──────────┐ ┌──────────┐            │
+│  │ migrate  │ │ migrate  │ │ migrate  │            │
+│  │ lib/utils│ │ utils/job│ │ svc/core │            │
+│  │ (Claude) │ │ (Claude) │ │ (Claude) │            │
+│  │ git push │ │ git push │ │ git push │            │
+│  └──────────┘ └──────────┘ └──────────┘            │
+└─────────────────────────────────────────────────────┘
+         │
+         │ S3 (questions + interventions only)
+         ▼
+┌─────────────┐
+│  Static SPA │  Human interaction
+└─────────────┘
 ```
 
 Three components:
-1. **Object storage** -- Single source of truth. Everything survives ephemeral sessions.
-2. **Agent orchestrator** -- Runs in ephemeral compute. Reads state on startup, does work, writes state back. Can die and resume.
-3. **Static web UI** -- S3-hosted SPA. Reads state, renders questions, writes answers. No backend server.
+1. **OSMO orchestrator workflow** -- Long-running task with Claude Code + OSMO CLI + git. Submits child workflows, monitors, coordinates. OSMO handles compute, scheduling, credentials.
+2. **OSMO child workflows** -- One per migration module. Clone repo, checkout branch, Claude Code migrates, commit + push. Git IS the state passing mechanism.
+3. **Static web UI** -- S3-hosted SPA. For human interaction only (questions, answers). Code state lives in git, not S3.
 
 ### Orchestrator Implementation
 

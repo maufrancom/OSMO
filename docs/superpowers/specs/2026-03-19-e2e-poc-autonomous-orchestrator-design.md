@@ -27,45 +27,70 @@ The OSMO agent strategy defines a 5-layer AI-native framework (Context, Decision
 
 ## Architecture
 
+### OSMO-Native Design
+
+The orchestrator runs as an OSMO workflow. Each migration subtask is a child OSMO workflow. Git is the state passing mechanism. OSMO handles scheduling, container lifecycle, and monitoring.
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│  OSMO Workflow: "agent-orchestrator"                        │
+│                                                             │
+│  Task: orchestrator (long-running)                          │
+│  ┌─────────────────────────────────────────────────────┐    │
+│  │  Container: Claude Code + OSMO CLI + git             │    │
+│  │                                                      │    │
+│  │  1. git clone (with PAT) + checkout branch           │    │
+│  │  2. Run discovery.sh (DIF)                           │    │
+│  │  3. Plan subtask order (DIF)                         │    │
+│  │  4. For each module:                                 │    │
+│  │     a. Generate child workflow YAML                  │    │
+│  │     b. osmo workflow submit migrate-{module}.yaml    │    │
+│  │     c. osmo workflow query {id} (poll until done)    │    │
+│  │     d. git pull (get child's changes)                │    │
+│  │     e. Run quality gate on updated repo              │    │
+│  │     f. If fail → revert, write question to S3        │    │
+│  │  5. Final validation (full quality gate)             │    │
+│  │  6. Generate intervention analysis                   │    │
+│  │  7. Create PR via gh                                 │    │
+│  └──────────┬──────────────────────────────────────────┘    │
+│             │ osmo workflow submit (child workflows)         │
+│             ▼                                                │
+│  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐       │
+│  │ Child WF:    │  │ Child WF:    │  │ Child WF:    │       │
+│  │ migrate      │  │ migrate      │  │ migrate      │       │
+│  │ lib/utils    │  │ utils/job    │  │ service/core │       │
+│  │              │  │              │  │              │       │
+│  │ git clone    │  │ git clone    │  │ git clone    │       │
+│  │ checkout br  │  │ checkout br  │  │ checkout br  │       │
+│  │ Claude Code  │  │ Claude Code  │  │ Claude Code  │       │
+│  │ commit+push  │  │ commit+push  │  │ commit+push  │       │
+│  └──────────────┘  └──────────────┘  └──────────────┘       │
+└─────────────────────────────────────────────────────────────┘
+         │
+         │  S3 (questions + interventions only)
+         ▼
+┌─────────────┐
+│  Static SPA │  Human reads questions, submits answers
+│  (Web UI)   │  Polls S3 for state
+└─────────────┘
+```
+
 ### System Components
 
-```
-┌─────────────┐         ┌──────────────────────┐
-│   Human     │         │   Object Storage     │
-│  (Web UI)   │◄───────►│   (S3 bucket)        │
-│  static SPA │  read/  │                      │
-└─────────────┘  write  │  /{task-id}/         │
-                        │    task.json          │
-                        │    state.json         │
-                        │    questions/         │
-                        │    subtasks/          │
-                        │    interventions.json │
-                        │    artifacts/         │
-                        └──────────┬───────────┘
-                                   │ read/write
-                        ┌──────────▼───────────┐
-                        │  Agent Orchestrator   │
-                        │  (ephemeral compute)  │
-                        │  ┌─ Coordinator ────┐ │
-                        │  │ DIF scripts      │ │
-                        │  └───────┬──────────┘ │
-                        │  ┌───────▼──────────┐ │
-                        │  │ Sub-agents (LLM)  │ │
-                        │  └──────────────────┘ │
-                        └───────────────────────┘
-```
-
-1. **Object storage (S3)** — Single source of truth. All state survives ephemeral sessions.
-2. **Agent orchestrator** — Runs in ephemeral compute. Bootstraps from stored state. Can die and resume.
-3. **Static web UI** — S3-hosted SPA. Renders questions, accepts answers. No backend.
+1. **OSMO orchestrator workflow** — Long-running task with Claude Code + OSMO CLI + git. Submits child workflows, monitors them, coordinates.
+2. **OSMO child workflows** — One per migration module. Clone repo, checkout branch, run Claude Code to migrate, commit + push.
+3. **Git** — State passing mechanism between orchestrator and children. Branch = migration progress.
+4. **S3** — Only for human interaction: questions, answers, intervention log. NOT for code state.
+5. **Static web UI** — S3-hosted SPA. Shows progress, renders questions, accepts answers.
 
 ### Design Principles
 
-- **No babysitting**: Orchestrator runs autonomously. Human checks in asynchronously.
-- **Ephemeral compute, persistent state**: Sessions are disposable. S3 is durable.
-- **Relentless execution**: Keep working on unblocked subtasks. Only pause when ALL subtasks are blocked.
-- **Bounded self-correction**: 2 retry attempts before escalating to human.
-- **Task-agnostic orchestrator**: Doesn't know what task it's running. Knowledge docs are pluggable.
+- **OSMO-native**: The orchestrator IS an OSMO workflow. True dogfooding.
+- **Git as state**: Code changes flow through git branches. No custom state layer for code.
+- **No babysitting**: Orchestrator runs autonomously. Human checks in asynchronously via web UI.
+- **Relentless execution**: Keep submitting child workflows. Only pause when blocked on human input.
+- **Bounded self-correction**: 2 retry attempts per module before escalating to human.
+- **Task-agnostic**: Swap the knowledge doc and workflow template for a different task.
 
 ---
 
@@ -107,45 +132,45 @@ Quality gate (DIF)
 
 ### Orchestrator Implementation
 
-**Language**: Python coordinator script. Chosen because the codebase is predominantly Python, the S3 SDK (boto3) is mature, and it can shell out to DIF scripts and invoke Claude Code as a subprocess.
+**Runtime**: OSMO workflow with a long-running orchestrator task. The container has Claude Code, OSMO CLI, and git installed.
 
-**Entry point**: `scripts/agent/orchestrator/run.py` — the coordinator. Reads `state.json` from S3, runs the core loop, writes state back.
+**Entry point**: A bash script injected via `files:` in the OSMO workflow YAML. It runs the orchestrator loop: discovery → planning → submit child workflows → monitor → validate.
 
-**Sub-agent lifecycle**:
-1. Coordinator prepares scoped context: target files, migration knowledge doc, learned decisions
-2. Spawns Claude Code as subprocess with a structured prompt and scoped file list
-3. Claude Code sub-agent executes the subtask (reads files, applies changes, runs lint)
-4. Sub-agent writes results to a structured output file (JSON: status, changed files, errors)
-5. Coordinator reads output, runs quality gate (DIF), updates state
+**Child workflow lifecycle**:
+1. Orchestrator generates a workflow YAML for the module (from a template)
+2. `osmo workflow submit migrate-{module}.yaml` — submits to OSMO
+3. Child task: git clone, checkout branch, pull latest, run Claude Code with scoped prompt + knowledge doc
+4. Claude Code migrates the module, commits, pushes to branch
+5. Orchestrator: `osmo workflow query {id}` polls until done
+6. Orchestrator: `git pull` to get child's changes
+7. Orchestrator: runs quality gate on updated repo
+8. If quality gate fails: `git revert HEAD`, write question to S3
 
-**DIF/LLM dispatch**: The coordinator is a state machine. Each transition is either DIF or LLM:
-- Discovery: DIF (grep, file scanning, grouping — `discover.sh`)
-- Planning: LLM (Claude Code with codebase context + migration guide)
-- Subtask execution: LLM (Claude Code sub-agent with scoped context)
+**DIF/LLM dispatch**:
+- Discovery: DIF (bash script — grep, scan, group)
+- Planning: DIF (bash script — sort modules by dependency order)
+- Child workflow generation: DIF (bash — template substitution)
+- Child workflow execution: LLM (Claude Code inside child OSMO task)
 - Quality gate: DIF (`quality-gate.sh`)
-- Progress tracking: DIF (read/write JSON to S3)
-- Question generation: LLM (Claude Code explains what it's stuck on)
+- Progress tracking: DIF (git log + `osmo workflow query`)
+- Question generation: DIF (bash — structured JSON to S3)
 
-### Session Scheduling and Concurrency
+**Concurrency control**: Sequential child workflows (POC scope). Orchestrator waits for each child to complete before submitting the next. No race conditions on git push.
 
-**Cron interval**: 5 minutes. Frequent enough that answers are picked up quickly, cheap enough since sessions exit fast when nothing to do.
+### Git Strategy
 
-**Compute timeout**: 30 minutes. Long enough to complete several subtasks, short enough to avoid runaway costs.
+- Orchestrator creates branch `agent/pydantic-v2-migration`
+- Each child workflow commits to this branch with descriptive message
+- Sequential execution ensures no merge conflicts
+- Each commit is independently revertable
+- The branch IS the progress log — `git log` shows exactly what's been migrated
+- Final step: create PR from branch to main
 
-**Mid-session save**: State is saved at subtask boundaries only. If a session dies mid-subtask, the subtask is retried from scratch on next session (sub-agents are idempotent — they read current file state).
+### OSMO Credential Management
 
-**Answer webhook**: S3 event notification → Lambda → triggers compute session. Provides immediate resumption without waiting for cron.
-
-**Concurrency control**: Session locking via S3 conditional writes. On session start, the coordinator writes `/{task-id}/session.lock` with a timestamp and ETag condition. If another session holds the lock, the new session exits immediately. Lock expires after compute timeout (30 min) — the coordinator checks the timestamp in the lock file, since S3 objects do not natively support TTL.
-
-### Git Commit Strategy
-
-Each completed subtask is a separate git commit with a descriptive message. This enables:
-- Independent revert of any subtask if a regression is discovered later
-- Clear audit trail of what changed per module
-- Downstream re-validation: after an upstream change (e.g., `lib/utils/common.py`), the coordinator re-runs quality gates on already-completed downstream subtasks
-
-**Rollback strategy**: If a subtask breaks tests in previously-completed subtasks, the coordinator: (1) reverts the failing commit, (2) marks the subtask as blocked, (3) writes a question asking the human how to resolve the dependency conflict.
+- GitHub PAT provided via OSMO `credentials:` field
+- PAT mounted to a file path in the container
+- Setup script configures git credential helper (same pattern as `cookbook/integration_and_tools/github/github.yaml`)
 
 ---
 
@@ -358,23 +383,21 @@ After task completion, the orchestrator:
 
 ---
 
-## Continuity Protocol Bridge
+## Continuity
 
-The existing continuity protocol (`docs/agent/continuity-protocol.md`) uses `.agent-progress.json` on the local filesystem and git state as the source of truth. The orchestrator uses `state.json` in S3. These need to coexist:
+Git is the continuity mechanism. The orchestrator branch (`agent/pydantic-v2-migration`) contains the full history of migration progress. Each child workflow starts by cloning and pulling the latest branch state. If the orchestrator task crashes and restarts, it reads `git log` to determine which modules have already been migrated, and resumes from where it left off.
 
-- **Orchestrator state** (`state.json` in S3): Task-level state — which subtasks are done, which are blocked, questions pending. The coordinator owns this.
-- **Sub-agent state** (`.agent-progress.json` local): Session-level state — what the sub-agent is working on within a single subtask. Ephemeral, not synced to S3.
-- **Bridge**: The coordinator's `state.json` supersedes local progress files for cross-session continuity. Sub-agents use local progress files for within-session checkpointing only. The existing `save-progress.sh` and `load-progress.sh` scripts work as-is for sub-agents; the coordinator handles S3 sync.
+S3 state (`questions/`, `interventions.json`) supplements git for human interaction data that doesn't belong in the repo.
 
 ## Runtime
 
-- **Agent runtime**: Claude Code first, agent-agnostic interface
-- **Coordinator**: Python script (`scripts/agent/orchestrator/run.py`) — orchestrates DIF scripts and Claude Code sub-agents
-- **Core DIF scripts**: Bash — portable across any agent runtime
-- **LLM adapter**: Thin Claude Code-specific layer (sub-agent spawning, context injection)
-- **Compute**: Ephemeral cloud sessions (SSH-accessible), 30-minute timeout
-- **Storage**: S3-compatible object storage
-- **Web UI**: Static HTML/JS on S3, presigned PUT URLs for answer submission
+- **Orchestrator**: OSMO workflow task with Claude Code + OSMO CLI + git
+- **Child tasks**: OSMO workflow tasks with Claude Code + git
+- **DIF scripts**: Bash — run inside orchestrator container
+- **Code state**: Git branch (pushed to remote)
+- **Human interaction state**: S3 (questions, interventions)
+- **Web UI**: Static HTML/JS on S3
+- **Credentials**: GitHub PAT via OSMO `credentials:` field
 
 ---
 
@@ -403,9 +426,10 @@ The existing continuity protocol (`docs/agent/continuity-protocol.md`) uses `.ag
 
 ## Resolved Questions
 
-- **Q10**: Session scheduling — **Hybrid**: 5-minute cron + S3 event notification → Lambda for immediate answer pickup. (Resolved in Session Scheduling section above.)
-- **Q11**: Sub-agent isolation — **Process-level**: Each sub-agent is a separate Claude Code subprocess with its own context. Stronger isolation, no state leakage. (Resolved in Orchestrator Implementation section above.)
-- **Q12**: Subtask execution — **Sequential within the POC**. The core loop picks one unblocked subtask at a time. Parallelism across modules is a future optimization, not POC scope. Dependency conflicts are avoided by sequential execution + dependency-aware ordering in the plan.
+- **Q10**: Session scheduling — **OSMO manages it**. The orchestrator is a long-running OSMO task. No cron needed. If it crashes, OSMO can restart it, and it resumes from git state.
+- **Q11**: Sub-agent isolation — **OSMO workflow isolation**. Each child workflow runs in its own container. Strongest possible isolation — separate pod, separate filesystem, separate process.
+- **Q12**: Subtask execution — **Sequential child workflows**. Orchestrator submits one child at a time, waits for completion, pulls changes, validates, then submits next. No merge conflicts.
+- **Q13**: State passing — **Git**. Code state flows through git branch. No custom S3 state layer for code. S3 only for human interaction (questions, interventions).
 
 ---
 
@@ -413,8 +437,8 @@ The existing continuity protocol (`docs/agent/continuity-protocol.md`) uses `.ag
 
 | # | Decision | Rationale |
 |---|---|---|
-| D25 | Autonomous orchestrator, no babysitting | Agent runs without human watching. Object storage as state, async interaction. |
-| D26 | Object storage as canonical state | Transport (web UI, Slack, GitHub) is pluggable. State lives in S3. |
+| D25 | OSMO-native orchestrator | Orchestrator runs as OSMO workflow. True dogfooding. OSMO handles compute, scheduling, credentials. |
+| D26 | Git as state, S3 for questions only | Code state flows through git branch. S3 only for human interaction. No custom state layer. |
 | D27 | Strict envelope, fluid content schema | DIF/LLM separation applied to data. Structure for routing, freedom for expression. |
 | D28 | Intervention feedback loop | Every interaction logged, categorized, fed back as framework improvement. |
 | D29 | Relentless execution | Keep going on unblocked subtasks. Only pause when fully blocked. |
