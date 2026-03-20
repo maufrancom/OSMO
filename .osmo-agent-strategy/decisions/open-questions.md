@@ -12,12 +12,6 @@ The GTM wedge is scale transition for existing users. Which specific teams are a
 
 **Depends on**: Current user base analysis, customer conversations.
 
-### Q2: What DIF mechanisms exist in current agent harnesses we can reuse?
-
-Claude Code, Codex, and kagent all have deterministic infrastructure. What pre/post-hooks, file routing, and verification patterns already exist that we should integrate with rather than replace?
-
-**Depends on**: Detailed analysis of each agent runtime's extension points.
-
 ### Q3: How to measure DIF-to-LLM escalation ratio per layer?
 
 The framework claims ~85% DIF / ~15% LLM overall. How do we instrument this to verify the ratio and optimize it?
@@ -89,6 +83,36 @@ Three candidate metrics. Which is primary?
 
 ---
 
+## POC-Specific
+
+### Q10: Orchestrator session scheduling -- cron interval vs. event-driven?
+
+The orchestrator runs in ephemeral compute. Sessions need to be triggered. Options:
+- **Cron** (e.g., every 5 minutes): Simple, predictable, but wastes compute when nothing to do
+- **Event-driven** (answer webhook triggers session): Efficient, but needs infrastructure for webhooks
+- **Hybrid** (cron + answer webhook): Background polling + immediate resumption on human answers
+
+**Depends on**: Infrastructure constraints, cost sensitivity, latency requirements for answer pickup.
+
+### Q11: Sub-agent isolation -- process-level or context-level?
+
+Each subtask gets a fresh sub-agent. How isolated?
+- **Context-level**: Same process, fresh context window. Simpler. Risk of state leakage.
+- **Process-level**: Separate process/container per sub-agent. Stronger isolation. More overhead.
+
+**Depends on**: Claude Code's sub-agent capabilities, overhead tolerance, isolation requirements.
+
+### Q12: How to handle subtask dependency conflicts during parallel execution?
+
+If subtask 14 modifies a file that subtask 15 also needs, and both run because subtask 13 is blocked, what happens?
+- **Sequential within module**: Only parallelize across modules, not within
+- **Merge-and-reconcile**: Let conflicts happen, reconcile after
+- **Dependency-aware scheduler**: Track file-level dependencies in the plan
+
+**Depends on**: How the migration decomposes into subtasks, git conflict resolution complexity.
+
+---
+
 ## Answered (From Original List)
 
 | Original Question | Answer | Decision |
@@ -103,3 +127,5 @@ Three candidate metrics. Which is primary?
 | "Long-running agent sessions?" | Hybrid MCP + event hooks (D21). Agent doesn't maintain single session. | D21 |
 | "Approval workflow for destructive actions?" | "AI recommends, humans approve, systems execute, every step logged." | Consensus for 2026 |
 | "When to reconsider OpenShell?" | When it reaches beta with stable API guarantees (est. 6-12 months from March 2026). | D5 |
+| "What DIF mechanisms exist in current agent harnesses?" | Landscape analysis complete. Claude Code hooks, superpowers quality gates, Cline Memory Bank pattern. | Research doc |
+| "How to interact with autonomous agent?" | Object storage as canonical state, web UI as POC transport, transport is pluggable. | D26, D31 |

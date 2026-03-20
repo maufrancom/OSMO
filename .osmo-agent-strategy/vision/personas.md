@@ -45,6 +45,16 @@ Phase 2 (Integrate):   Operator persona -- INTEGRATE
 
 **Success metric**: Human interventions per task. Target: <=2 (from current ~10+).
 
+### E2E POC: Autonomous Orchestrator on Pydantic Migration
+
+The Developer persona's first real proof is the E2E POC:
+
+- **Task**: Migrate OSMO from Pydantic v1 (1.10.26) to v2 (2.12.5). 68 files, 212 BaseModel subclasses, 657 usages.
+- **How it runs**: Autonomous orchestrator in ephemeral cloud compute. Persists state to S3. Human interacts via static web UI. No babysitting.
+- **What it proves**: The orchestrator is task-agnostic. It decomposes any prompt into subtasks, executes them via sub-agents with scoped context, runs quality gates, tracks progress across sessions, and surfaces questions only when truly blocked.
+- **Feedback loop**: Every human intervention is logged and analyzed. After the migration completes, the orchestrator generates framework improvement patches. The framework learns from the experience.
+- **Success criteria**: Migration complete, all tests green, no v1 patterns remaining, ≤2 total human interventions, framework improvement patches generated.
+
 ---
 
 ## Persona B: The OSMO Operator (INTEGRATE)

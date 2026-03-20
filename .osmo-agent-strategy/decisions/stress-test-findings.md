@@ -106,3 +106,21 @@ The DIF/LLM separation emerged from stress-testing the framework layers:
 - **Conclusion**: Default to DIF, escalate to LLM. This makes the framework cheaper, faster, and more reliable. LLM tokens should be spent on actual reasoning (writing code, making design decisions), not on infrastructure tasks that a shell script handles better.
 
 See [ai-native-framework.md](../architecture/ai-native-framework.md) for the full DIF/LLM table.
+
+---
+
+## Challenge 9: How to Prove the Framework End-to-End
+
+**Challenge**: The vertical slice (DIF scripts + knowledge docs + AGENTS.md files) is infrastructure. How do we prove it actually works on a real task, end-to-end, with measurable results?
+
+**Finding**: Build an autonomous orchestrator that takes a natural language task and drives it to completion without babysitting. The orchestrator persists all state to object storage, communicates with humans async via a static web UI, runs relentlessly across ephemeral compute sessions, and logs every human intervention for framework improvement. The first task: Pydantic v1→v2 migration across the entire OSMO codebase (68 files, 212 models, 657 usages).
+
+**Key design decisions from the POC brainstorm**:
+1. **No babysitting** -- agent runs autonomously, surfaces questions async, human answers when convenient
+2. **Object storage as canonical state** -- all state in S3, transport (web UI, Slack, GitHub) is pluggable
+3. **Strict envelope, fluid content** -- DIF-parseable structure fields + LLM-generated content fields
+4. **Relentless execution** -- keep working on unblocked subtasks even when others are blocked on human input
+5. **Intervention feedback loop** -- every human interaction logged, categorized, and turned into framework improvement patches
+6. **Task-agnostic orchestrator** -- the orchestrator doesn't know it's doing a Pydantic migration; swap the knowledge doc and it handles any task
+
+**Impact**: Added decisions D25-D31. Updated thesis with Phase 0.5. Updated ai-native-framework.md with Section 6 (Autonomous Orchestrator). Updated substrate-design.md with full POC implementation architecture.

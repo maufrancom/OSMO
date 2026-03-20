@@ -46,9 +46,9 @@
 
 | File | One-line summary |
 |------|-----------------|
-| [decisions/decided.md](decisions/decided.md) | 24 firm decisions with evidence |
-| [decisions/open-questions.md](decisions/open-questions.md) | 9 refined open questions (strategic, technical, product) |
-| [decisions/stress-test-findings.md](decisions/stress-test-findings.md) | 8 stress-test challenges and how they reshaped the strategy |
+| [decisions/decided.md](decisions/decided.md) | 31 firm decisions with evidence (including E2E POC decisions D25-D31) |
+| [decisions/open-questions.md](decisions/open-questions.md) | 12 open questions (strategic, technical, product, POC-specific) |
+| [decisions/stress-test-findings.md](decisions/stress-test-findings.md) | 9 stress-test challenges and how they reshaped the strategy (including E2E POC) |
 
 ### Reference
 
@@ -60,13 +60,16 @@
 
 ## Current Status
 
-**Where we are**: Framework designed, vertical slice implementation in progress.
+**Where we are**: Framework designed, vertical slice implemented, E2E POC in design.
 
 1. Strategy docs restructured to reflect evolved thesis (5-layer framework, DIF/LLM, market-maker model)
-2. Vertical slice implementation underway: thin through all 5 layers on OSMO's own development
-3. Next: validate end-to-end on real tasks, measure human interventions per task
+2. Vertical slice implemented: 8 DIF scripts, 5 knowledge docs, 4 service AGENTS.md files
+3. Landscape analysis complete: evaluated 9 agent runtimes, 30+ MCP servers, 11 frameworks
+4. **E2E POC designed**: Autonomous agent orchestrator that takes a natural language task, decomposes it, executes relentlessly across ephemeral sessions, communicates with humans async via object storage, and feeds intervention data back into the framework
+5. **First POC task**: Pydantic v1→v2.12.5 migration (68 files, 212 BaseModel subclasses, 657 usages)
+6. Next: implement the orchestrator, run the migration, measure interventions, improve framework
 
-## Key Decisions (Top 5)
+## Key Decisions (Top 7)
 
 | # | Decision | Rationale |
 |---|----------|-----------|
@@ -75,8 +78,10 @@
 | D13 | DIF/LLM separation | Default deterministic, escalate to LLM -- cheaper, more reliable, auditable |
 | D14 | NVIDIA market-maker | Fully open-source code AND data -- K8s/Linux model |
 | D24 | Agent-agnostic | AGENTS.md convention, not Claude-specific -- works with any agent runtime |
+| D25 | Autonomous orchestrator | Agent runs without babysitting -- object storage as state, async human interaction |
+| D28 | Intervention feedback loop | Every human interaction logged, categorized, and fed back as framework improvement |
 
-See [decisions/decided.md](decisions/decided.md) for all 24 decisions.
+See [decisions/decided.md](decisions/decided.md) for all 31 decisions.
 
 ---
 
@@ -113,8 +118,15 @@ Stress-testing + refinement
 The 5-layer AI-native framework
   "LLMs are capable enough. The bottleneck is the harness.
    5 layers x DIF/LLM separation. Dogfood on OSMO, then generalize."
+        |
+        v
+E2E POC: Autonomous agent orchestrator
+  "Don't babysit agents. Build an orchestrator that runs relentlessly
+   across ephemeral sessions, persists state to object storage,
+   surfaces questions async, and improves itself from every
+   human intervention. First task: Pydantic v1->v2 migration."
 ```
 
 ---
 
-*Last updated: March 2026. See [sources.md](sources.md) for all references.*
+*Last updated: March 19, 2026. See [sources.md](sources.md) for all references.*

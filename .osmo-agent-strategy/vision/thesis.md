@@ -50,8 +50,16 @@ Phase 0: Dogfood on OSMO development
   on OSMO's own codebase (Python + Go + TypeScript + K8s)
          |
          v
+Phase 0.5: E2E POC -- Autonomous Orchestrator
+  Build an orchestrator that takes a natural language task,
+  decomposes it, executes relentlessly across ephemeral sessions,
+  communicates with humans async via object storage, and feeds
+  intervention data back into the framework.
+  First task: Pydantic v1→v2 migration (68 files, 212 models)
+         |
+         v
 Phase 1: Generalize to Physical AI pipelines
-  Same framework, domain-specific content
+  Same framework + orchestrator, domain-specific content
   MCP server with 8-10 tools encoding OSMO's unique knowledge
          |
          v
@@ -61,6 +69,8 @@ Phase 2: Generalize to any domain
 ```
 
 **Why dogfood first**: If the framework can't improve AI-assisted development of OSMO itself -- a complex multi-language, multi-service platform -- it won't work for Physical AI pipelines either. OSMO's own development is the hardest test case we control.
+
+**The user journey**: Give a prompt. Walk away. Check back when notified. The orchestrator runs autonomously, surfaces questions only when truly blocked, and improves its own framework from every human interaction. The product is the orchestration layer, not the individual task.
 
 ## NVIDIA Market-Maker Model
 

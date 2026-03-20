@@ -159,3 +159,49 @@ These decisions emerged through research, analysis, and stress-testing. Each is 
 **Decision**: All framework files use the AGENTS.md convention (works with any agent runtime), not CLAUDE.md or any vendor-specific format.
 
 **Reasoning**: Claude Code, Codex, kagent, and future agents all read AGENTS.md. Vendor lock-in on the framework defeats the market-maker model.
+
+---
+
+## E2E POC Decisions
+
+### D25: Autonomous orchestrator -- no babysitting
+
+**Decision**: The agent orchestrator runs autonomously in ephemeral cloud compute. No human watches it. It persists all state to object storage and communicates with humans async.
+
+**Reasoning**: The user journey is: give a prompt, walk away, check back when notified. If the agent needs human input, it surfaces structured questions and continues working on unblocked subtasks. Babysitting defeats the purpose of AI-native development.
+
+### D26: Object storage as canonical state, transport as plugin
+
+**Decision**: Object storage (S3) is the single source of truth for all orchestrator state. The human interaction channel (web UI, Slack, GitHub, CLI) is a pluggable transport that reads/writes to storage.
+
+**Reasoning**: Decouples state persistence from human interaction. The orchestrator writes state once; any number of UIs can read it. Changing from web UI to Slack requires only a new reader/writer, not orchestrator changes.
+
+### D27: Strict envelope, fluid content schema
+
+**Decision**: Object storage files use strict fields for state machine logic (`id`, `status`, `timestamps`, `phase`) and fluid fields for LLM-generated content (`context`, `reasoning`, `question`, `options`).
+
+**Reasoning**: DIF/LLM separation applied to data. The orchestrator and web UI need reliable structure to make routing decisions (DIF). The agent needs freedom to express nuance in questions and context (LLM). New capabilities don't require schema migrations -- just richer content in fluid fields.
+
+### D28: Intervention feedback loop
+
+**Decision**: Every human interaction is logged with category, avoidability assessment, and a proposed framework fix. After task completion, the orchestrator generates patches to knowledge docs and DIF scripts.
+
+**Reasoning**: This is how the framework learns. Without the feedback loop, every task is independent. With it, each task makes future tasks cheaper. The intervention log is also the primary evidence for the ≤2 interventions thesis.
+
+### D29: Relentless execution -- keep going until done or fully blocked
+
+**Decision**: The orchestrator works on any unblocked subtask. If one subtask is blocked on a human question, it moves to the next. It only pauses when every remaining subtask is blocked.
+
+**Reasoning**: Maximizes throughput. A 38-subtask migration where 1 subtask is blocked shouldn't idle 37 others. The cron/supervisor ensures new sessions keep spawning. Answer webhooks trigger immediate resumption.
+
+### D30: Pydantic v1→v2 as first POC task
+
+**Decision**: The first task through the autonomous orchestrator is migrating OSMO from Pydantic v1 (1.10.26) to v2 (2.12.5). 68 files, 212 BaseModel subclasses, 657 usages.
+
+**Reasoning**: Perfect proof-of-concept: cross-cutting (touches every Python service), has clear success criteria (all tests pass, no v1 patterns remain), exercises all 5 layers (context routing for discovery, decision enforcement for architectural boundaries, quality gates for regression detection, continuity across many sessions, meta-cognition for self-correction). Complex enough to be convincing, scoped enough to be completable.
+
+### D31: Static web UI for POC human interaction
+
+**Decision**: The POC human interface is a single static HTML file hosted on S3. No framework, no build step, no backend server. Reads state from S3, renders questions, writes answers via presigned URLs.
+
+**Reasoning**: Fastest path to demonstrating async human-agent interaction. The web UI is not the product -- the orchestrator is. Spending time on a rich UI before the orchestrator works is premature optimization.

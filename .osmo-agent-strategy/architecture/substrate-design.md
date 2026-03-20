@@ -228,3 +228,119 @@ More teams use OSMO
 ```
 
 This is the K8s/Linux model. The project is fully open. NVIDIA benefits from deepest integration with own hardware/software stack. Community benefits from accumulated intelligence. No lock-in, maximum adoption velocity.
+
+---
+
+## 6. E2E POC: Autonomous Agent Orchestrator
+
+The POC proves the framework end-to-end on a real task: migrating OSMO from Pydantic v1 (1.10.26) to v2 (2.12.5) across 68 files, 212 BaseModel subclasses, 657 usages.
+
+### System Architecture
+
+```
+┌─────────────┐         ┌──────────────────────┐
+│   Human     │         │   Object Storage     │
+│  (Web UI)   │◄───────►│   (S3 bucket)        │
+│  static SPA │  read/  │                      │
+└─────────────┘  write  │  /tasks/             │
+                        │  /questions/          │
+                        │  /subtasks/           │
+                        │  /progress/           │
+                        │  /interventions/      │
+                        │  /artifacts/          │
+                        └──────────┬───────────┘
+                                   │ read/write
+                        ┌──────────▼───────────┐
+                        │  Agent Orchestrator   │
+                        │  (ephemeral compute)  │
+                        │  ┌─ Coordinator ────┐ │
+                        │  │ DIF scripts      │ │
+                        │  └───────┬──────────┘ │
+                        │  ┌───────▼──────────┐ │
+                        │  │ Sub-agents (LLM)  │ │
+                        │  └──────────────────┘ │
+                        └───────────────────────┘
+```
+
+Three components:
+1. **Object storage** -- Single source of truth. Everything survives ephemeral sessions.
+2. **Agent orchestrator** -- Runs in ephemeral compute. Reads state on startup, does work, writes state back. Can die and resume.
+3. **Static web UI** -- S3-hosted SPA. Reads state, renders questions, writes answers. No backend server.
+
+### Orchestrator Implementation
+
+The orchestrator is the product. It takes any high-level task and drives it autonomously.
+
+**Core loop**: Load state → incorporate answers → pick next unblocked subtask → execute via sub-agent → quality gate → save progress → repeat until done or fully blocked.
+
+**Key behaviors**:
+- Stateless sessions: bootstraps entirely from object storage
+- Parallel unblocking: if subtask 13 is blocked but 14-38 can proceed, keep going
+- Bounded retries: 2 self-correction attempts, then escalate to human
+- Exit is normal: designed to exit when blocked, resume on next session
+- Cron/supervisor keeps spawning sessions; answer webhook triggers immediate resumption
+
+**Runtime**: Claude Code first, agent-agnostic interface. Core logic in DIF scripts, thin Claude Code adapter.
+
+### Object Storage Schema
+
+Strict envelope (DIF-parseable: `id`, `status`, `timestamps`, `phase`) + fluid content (LLM-generated: `context`, `reasoning`, `question`).
+
+```
+s3://osmo-agent/{task-id}/
+├── task.json              # Original prompt + decomposed plan
+├── state.json             # Current phase, completed/blocked subtasks, session count
+├── questions/
+│   └── q-NNN.json         # Context + options + answer + impact
+├── subtasks/
+│   └── st-NNN.json        # Per-subtask state + quality gate results
+├── interventions.json     # Every human interaction, categorized, avoidability tagged
+└── artifacts/
+    ├── st-NNN.patch       # Code changes per subtask
+    └── framework-improvements/  # Generated patches to DIF/knowledge docs
+```
+
+### Static Web UI
+
+Single HTML file on S3. No framework, no build step.
+
+- Polls `state.json` on interval (30s)
+- Renders pending questions with clickable options + free-text fallback
+- Writes answers back via presigned URL or tiny Lambda
+- Shows: task progress bar, recent activity log, intervention count
+- Auth: presigned URLs with short TTL or API Gateway + Lambda with basic auth
+
+### Pydantic Migration: Task-Specific Execution
+
+**Discovery phase (DIF)**:
+- Scan `requirements.txt` → `pydantic==1.10.26`
+- Grep for Pydantic imports → group by module dependency order
+- Detect v1 patterns: `Config` inner class, `.dict()`, `.json()`, `Field(...)`, `Optional` vs `| None`
+- Output: `task.json` with subtask list and dependency graph
+
+**Planning phase (LLM)**:
+- Read Pydantic v2 migration guide + architecture-intent.md
+- Order: leaf modules first, shared libs last (tests stay green incrementally)
+- Flag high-risk areas (postgres connector: 85 usages, workflow objects: 49)
+
+**Execution phase (per subtask, sub-agent)**:
+- Each sub-agent gets scoped context: target files + migration knowledge doc + learned decisions
+- Apply v1→v2 transformations → lint-fast → module tests → green? patch + done : self-correct or question
+
+**Validation phase (DIF)**:
+- Full quality-gate across entire codebase
+- Verify no v1 patterns remain
+- Final report
+
+**What makes this a framework proof**: The orchestrator doesn't know it's doing a Pydantic migration. It executes a generic task→plan→execute→validate loop. The Pydantic-specific knowledge lives in a knowledge doc. Swap the knowledge doc for "add OpenTelemetry tracing" and the same orchestrator runs.
+
+### Intervention Feedback Loop
+
+After task completion:
+1. Read `interventions.json`
+2. Group avoidable interventions by `framework_fix.type`
+3. Generate concrete patches to framework files (knowledge docs, DIF scripts, AGENTS.md)
+4. Write patches to `artifacts/framework-improvements/`
+5. These become a PR -- the framework improves itself from the experience
+
+**Target metric**: ≤2 human interventions for the entire Pydantic migration.

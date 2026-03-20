@@ -241,6 +241,96 @@ Meta-cognition Layer:
 
 ---
 
+## 6. Autonomous Orchestrator: The Execution Model
+
+The framework layers describe WHAT an effective agent harness needs. The autonomous orchestrator describes HOW it executes.
+
+### Design Principles
+
+1. **No babysitting**: The orchestrator runs without a human watching. It works autonomously, surfaces questions async when truly blocked, and resumes when answers arrive.
+2. **Ephemeral compute, persistent state**: Sessions are disposable. Object storage is the single source of truth. Any session can bootstrap from stored state.
+3. **Relentless execution**: The orchestrator keeps working on any unblocked subtask. It only pauses when EVERY remaining subtask is blocked on unanswered human questions.
+4. **Bounded self-correction**: 2 retry attempts on failure before escalating to human. Prevents infinite loops without giving up too early.
+
+### The Core Loop
+
+```
+Start session → Load state from object storage
+    │
+    ▼
+Pending human answers? ──yes──► Incorporate, unblock subtasks
+    │                                 │
+    no                                │
+    │◄────────────────────────────────┘
+    ▼
+Has a plan? ──no──► Discovery + Planning phase
+    │                 (DIF: scan codebase, group by module)
+    yes               (LLM: reason about order, risk, dependencies)
+    │
+    ▼
+Pick next unfinished, unblocked subtask
+    │
+    ▼
+Execute (LLM sub-agent with scoped context)
+    │
+    ▼
+Quality gate (DIF)
+    │
+    ├── pass → Mark done → More subtasks? → loop
+    │
+    └── fail → Self-correct (max 2) → still failing?
+                                        → Write question to storage
+                                          Continue to next unblocked subtask
+```
+
+### Human Interaction Protocol
+
+The orchestrator and human are **never online at the same time by design**. All communication is async via object storage.
+
+| Agent Action | Human Action |
+|---|---|
+| Writes question with context + options to storage | Reads question via web UI |
+| Continues working on other unblocked subtasks | Answers when convenient |
+| Picks up answer on next session start | Gets notified of progress |
+| Logs intervention for framework improvement | Reviews intervention log |
+
+### Object Storage as State Layer
+
+All orchestrator state persists to object storage with a strict-envelope, fluid-content schema:
+
+- **Strict fields** (DIF-parseable): `id`, `status`, `type`, `timestamps`, `phase`. The orchestrator and web UI depend on these.
+- **Fluid fields** (LLM-generated): `context`, `question`, `reasoning`, `options`. Natural language, rendered as-is.
+
+```
+s3://osmo-agent/{task-id}/
+├── task.json              # Original prompt + decomposed plan
+├── state.json             # Current phase, completed/blocked subtasks
+├── questions/q-NNN.json   # Agent questions with context + options
+├── subtasks/st-NNN.json   # Per-subtask state + quality results
+├── interventions.json     # Every human interaction, categorized
+└── artifacts/             # Patches, diffs, quality reports
+```
+
+### Intervention Feedback Loop
+
+Every human interaction is logged, categorized, and analyzed:
+
+| Category | Meaning | Framework Fix |
+|---|---|---|
+| **design_decision** | Agent lacked a rule | Add to architecture-intent.md |
+| **ambiguity** | Conflicting signals | Clarify in knowledge docs |
+| **bug** | Broken code, self-correction failed | Add pattern to migration knowledge doc |
+| **failure** | Quality gate failed exhaustively | Improve quality gate or add pre-check |
+| **steering** | Human wanted different direction | May not be avoidable (genuine judgment) |
+
+After task completion, the orchestrator generates framework improvement patches from the intervention log. The framework literally learns from every task it runs.
+
+### Success Metric
+
+`total_human_interventions / total_task` -- the thesis says ≤2 per task. For a 38-subtask migration, that means ≤2 human questions total across the entire migration.
+
+---
+
 ## References
 
 - Anthropic: Two-agent pattern, progress files, session bootstrapping
