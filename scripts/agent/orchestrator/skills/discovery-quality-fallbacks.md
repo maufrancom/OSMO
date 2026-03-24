@@ -7,8 +7,9 @@ SPDX-License-Identifier: Apache-2.0
 
 Read this only if the repo has no linters, test runners, or CI configs.
 
-| Language | Quick check | Full check |
+| Build System / Language | Quick check | Full check |
 |----------|------------|------------|
+| Bazel | `bazel build //src/...` | `bazel test //src/...` |
 | Python | `python -m py_compile <file>` | `python -m pytest` (if tests exist) |
 | Go | `go vet ./...` | `go test ./...` |
 | TypeScript | `npx tsc --noEmit` | `npm test` (if configured) |

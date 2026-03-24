@@ -20,8 +20,9 @@ During the Discovery phase, you should have identified how this repo validates c
 
 ## Fallbacks (When Repo Has No Tooling)
 
-| Language | Quick check | Full check |
+| Build System / Language | Quick check | Full check |
 |----------|------------|------------|
+| Bazel | `bazel build //src/...` | `bazel test //src/...` |
 | Python | `python -m py_compile <file>` | `python -m pytest` (if tests exist) |
 | Go | `go vet ./...` | `go test ./...` |
 | TypeScript | `npx tsc --noEmit` | `npm test` (if configured) |

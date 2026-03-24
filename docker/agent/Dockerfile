@@ -27,6 +27,8 @@ RUN apt-get update -qq && \
       python3-yaml \
       ca-certificates \
       openssh-client \
+      build-essential \
+      python3-dev \
     && rm -rf /var/lib/apt/lists/*
 
 # GitHub CLI

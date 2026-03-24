@@ -401,10 +401,17 @@ def checkpoint(commit_prefix="agent"):
 # Agent Loop
 # ============================================================
 
-# Compaction triggers when estimated tokens exceed this threshold.
-# Claude Opus context is ~200k tokens. We compact at 80k to leave headroom
-# for the model's response and tool results in the current turn.
-TOKEN_COMPACT_THRESHOLD = 80_000
+# Compaction thresholds. Two triggers — whichever fires first:
+#
+# 1. Token count: Claude Opus context is ~200k tokens. Quality degrades well
+#    before the hard limit — attention dilution starts around 60-80k. We compact
+#    at 40k to keep the model in its sharpest range.
+#
+# 2. Message count: Even at low token counts, hundreds of messages dilute
+#    attention. Tool call/result pairs are high-volume, low-signal after the
+#    model has processed them. 100 messages is a reasonable upper bound.
+TOKEN_COMPACT_THRESHOLD = 40_000
+MESSAGE_COMPACT_THRESHOLD = 100
 
 
 def run_agent(client, model, prompt, system_prompt=None,
@@ -431,11 +438,15 @@ def run_agent(client, model, prompt, system_prompt=None,
         turn += 1
         sys.stderr.write(f"\n--- Turn {turn} ---\n")
 
-        # Context compaction check
+        # Context compaction check (token count OR message count)
         estimated_tokens = estimate_tokens(messages)
-        sys.stderr.write(f"Context: ~{estimated_tokens} tokens, {len(messages)} messages\n")
-        if estimated_tokens > TOKEN_COMPACT_THRESHOLD:
-            sys.stderr.write(f"Compacting context (threshold: {TOKEN_COMPACT_THRESHOLD})...\n")
+        msg_count = len(messages)
+        sys.stderr.write(f"Context: ~{estimated_tokens} tokens, {msg_count} messages\n")
+        if estimated_tokens > TOKEN_COMPACT_THRESHOLD or msg_count > MESSAGE_COMPACT_THRESHOLD:
+            reason = (f"tokens={estimated_tokens}>{TOKEN_COMPACT_THRESHOLD}"
+                      if estimated_tokens > TOKEN_COMPACT_THRESHOLD
+                      else f"messages={msg_count}>{MESSAGE_COMPACT_THRESHOLD}")
+            sys.stderr.write(f"Compacting context ({reason})...\n")
             messages = compact_messages(client, model, messages)
 
         # Periodic checkpointing
@@ -444,16 +455,38 @@ def run_agent(client, model, prompt, system_prompt=None,
             checkpoint(commit_prefix)
             last_checkpoint_turn = turn
 
-        try:
-            response = client.chat.completions.create(
-                model=model,
-                messages=messages,
-                tools=TOOLS,
-                max_tokens=16384,
-            )
-        except Exception as e:
-            sys.stderr.write(f"API error: {e}\n")
-            # Checkpoint before dying
+        # API call with exponential backoff (retries forever for transient errors)
+        response = None
+        attempt = 0
+        while True:
+            try:
+                response = client.chat.completions.create(
+                    model=model,
+                    messages=messages,
+                    tools=TOOLS,
+                    max_tokens=16384,
+                )
+                break
+            except Exception as e:
+                attempt += 1
+                error_str = str(e)
+                status_code = getattr(e, "status_code", None)
+
+                # Non-retryable errors: auth, model not found, bad request
+                if status_code in (401, 403, 404, 422):
+                    sys.stderr.write(f"API error (non-retryable, {status_code}): {error_str}\n")
+                    break
+
+                # Retryable: rate limit, server error, timeout, connection error
+                wait = min(2 ** attempt * 5, 300)  # 10s, 20s, 40s, ... capped at 5min
+                sys.stderr.write(
+                    f"API error (attempt {attempt}): {error_str}\n"
+                    f"Retrying in {wait}s...\n"
+                )
+                time.sleep(wait)
+
+        if response is None:
+            sys.stderr.write("API error: non-retryable. Checkpointing and exiting.\n")
             if checkpoint_interval > 0:
                 checkpoint(commit_prefix)
             break
