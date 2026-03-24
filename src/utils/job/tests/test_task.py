@@ -17,7 +17,7 @@ SPDX-License-Identifier: Apache-2.0
 """
 import copy
 import datetime
-from typing import Dict, List
+from typing import Any, Dict, List, Union, cast
 from unittest import mock
 import unittest
 
@@ -39,8 +39,9 @@ def create_lvm_volume(name: str, size: str):
             }
     }
 
-def create_container(cpu: str = '1', ephemeral_storage: str = '1Gi', memory: str = '1Gi',
-                     name='user', volume_mounts: List = []):
+def create_container(cpu: Union[str, int] = '1', ephemeral_storage: str = '1Gi',
+                     memory: str = '1Gi',
+                     name: str = 'user', volume_mounts: List[Any] = []):
     result = {
         'name': name,
         'image': 'ubuntu:latest',
@@ -87,7 +88,7 @@ def create_toleration():
 
 
 class TaskTest(unittest.TestCase):
-    def check_other_fields(self, final_pod: Dict, tolerations: Dict, labels: List):
+    def check_other_fields(self, final_pod: Dict, tolerations: List, labels: Dict):
         self.assertEqual(final_pod['spec']['tolerations'], tolerations)
         self.assertEqual(final_pod['metadata']['labels'], labels)
 
@@ -296,7 +297,7 @@ class TaskTest(unittest.TestCase):
         answer = copy.deepcopy(pod)
 
         # Override spec with empty arrays
-        pod_override = {'spec': {'containers': [], 'volumes': []}}
+        pod_override: Dict[str, Any] = {'spec': {'containers': [], 'volumes': []}}
         pod = task.apply_pod_template(pod, pod_override)
         self.assertEqual(pod, answer)
 
@@ -310,33 +311,35 @@ class TaskTest(unittest.TestCase):
         tokens = resource.get_allocatable_tokens({})
 
         # Evaluate the values for storage
-        self.assertAlmostEqual(tokens[f'USER_STORAGE_m'], 10 * 1024 * 1024 * 1024 * 1024, places=5)
-        self.assertAlmostEqual(tokens[f'USER_STORAGE_B'], 10 * 1024 * 1024 * 1024, places=5)
-        self.assertAlmostEqual(tokens[f'USER_STORAGE_Ki'], 10 * 1024 * 1024, places=5)
-        self.assertAlmostEqual(tokens[f'USER_STORAGE_Mi'], 10 * 1024, places=5)
-        self.assertAlmostEqual(tokens[f'USER_STORAGE_Gi'], 10, places=5)
-        self.assertAlmostEqual(tokens[f'USER_STORAGE_Ti'], 10.0 / 1024 , places=5)
+        # cast() used because get_allocatable_tokens returns Optional values,
+        # but these keys are guaranteed non-None when storage is set.
+        self.assertAlmostEqual(cast(float, tokens['USER_STORAGE_m']), 10 * 1024 * 1024 * 1024 * 1024, places=5)
+        self.assertAlmostEqual(cast(float, tokens['USER_STORAGE_B']), 10 * 1024 * 1024 * 1024, places=5)
+        self.assertAlmostEqual(cast(float, tokens['USER_STORAGE_Ki']), 10 * 1024 * 1024, places=5)
+        self.assertAlmostEqual(cast(float, tokens['USER_STORAGE_Mi']), 10 * 1024, places=5)
+        self.assertAlmostEqual(cast(float, tokens['USER_STORAGE_Gi']), 10, places=5)
+        self.assertAlmostEqual(cast(float, tokens['USER_STORAGE_Ti']), 10.0 / 1024, places=5)
 
         # Evaluate the values for memory (test that values with decimal work)
-        self.assertAlmostEqual(tokens[f'USER_MEMORY_m'], 10.5 * 1024 * 1024 * 1024, places=5)
-        self.assertAlmostEqual(tokens[f'USER_MEMORY_B'], 10.5 * 1024 * 1024, places=5)
-        self.assertAlmostEqual(tokens[f'USER_MEMORY_Ki'], 10.5 * 1024, places=5)
-        self.assertAlmostEqual(tokens[f'USER_MEMORY_Mi'], 10.5 , places=5)
-        self.assertAlmostEqual(tokens[f'USER_MEMORY_Gi'], 10.5 / 1024, places=5)
-        self.assertAlmostEqual(tokens[f'USER_MEMORY_Ti'], 10.5 / 1024 /1024, places=5)
+        self.assertAlmostEqual(cast(float, tokens['USER_MEMORY_m']), 10.5 * 1024 * 1024 * 1024, places=5)
+        self.assertAlmostEqual(cast(float, tokens['USER_MEMORY_B']), 10.5 * 1024 * 1024, places=5)
+        self.assertAlmostEqual(cast(float, tokens['USER_MEMORY_Ki']), 10.5 * 1024, places=5)
+        self.assertAlmostEqual(cast(float, tokens['USER_MEMORY_Mi']), 10.5, places=5)
+        self.assertAlmostEqual(cast(float, tokens['USER_MEMORY_Gi']), 10.5 / 1024, places=5)
+        self.assertAlmostEqual(cast(float, tokens['USER_MEMORY_Ti']), 10.5 / 1024 / 1024, places=5)
 
     def test_token_values_with_incomplete_resource_spec(self):
         """ Test that the keys are still populated, with values None. """
-        resource = connectors.ResourceSpec()
-        tokens = resource.get_allocatable_tokens({})
-        for resource in ['CPU', 'GPU']:
-            self.assertIsNone(tokens[f'USER_{resource}'])
-        for resource in ['MEMORY', 'STORAGE']:
-            self.assertIsNone(tokens[f'USER_{resource}'])
-            self.assertIsNone(tokens[f'USER_{resource}_VAL'])
-            self.assertIsNone(tokens[f'USER_{resource}_UNIT'])
+        resource_spec = connectors.ResourceSpec()
+        tokens = resource_spec.get_allocatable_tokens({})
+        for resource_name in ['CPU', 'GPU']:
+            self.assertIsNone(tokens[f'USER_{resource_name}'])
+        for resource_name in ['MEMORY', 'STORAGE']:
+            self.assertIsNone(tokens[f'USER_{resource_name}'])
+            self.assertIsNone(tokens[f'USER_{resource_name}_VAL'])
+            self.assertIsNone(tokens[f'USER_{resource_name}_UNIT'])
             for target_unit in common.MEASUREMENTS_SHORT:
-                self.assertIsNone(tokens[f'USER_{resource}_{target_unit}'])
+                self.assertIsNone(tokens[f'USER_{resource_name}_{target_unit}'])
 
     def test_default_user_and_override_resource_spec(self):
         """
