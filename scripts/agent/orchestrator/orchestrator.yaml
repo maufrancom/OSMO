@@ -48,6 +48,8 @@ workflow:
     args: [/tmp/entry.sh]
     credentials:
       github-pat: /tmp/github
+      anthropic-api-key:
+        ANTHROPIC_API_KEY: anthropic-api-key
     environment:
       GITHUB_REPO: "{{github_repo}}"
       BRANCH_NAME: "{{branch_name}}"
@@ -83,7 +85,7 @@ workflow:
         echo "Branch:   ${BRANCH_NAME}"
         echo "Subtask:  ${SUBTASK_ID:-root}"
 
-        # Setup git auth
+        # Setup git auth (ANTHROPIC_API_KEY injected by OSMO credentials)
         bash /tmp/setup_git.sh
 
         # Clone and checkout branch
@@ -189,6 +191,8 @@ workflow:
         "
 
         echo "Starting Claude Code (subtask: ${SUBTASK_ID:-root})..."
+        # --dangerously-skip-permissions: no confirmation prompts (headless container)
+        # --print: output to stdout (non-interactive)
         exec claude --print --dangerously-skip-permissions -p "$PROMPT"
 
 default-values:

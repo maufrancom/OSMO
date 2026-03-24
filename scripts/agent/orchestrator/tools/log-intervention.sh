@@ -42,12 +42,10 @@ AVOIDABLE="$3"
 FRAMEWORK_FIX_JSON="$4"
 
 # Validate required environment variables
-for var in S3_BUCKET TASK_ID; do
-  if [[ -z "${!var:-}" ]]; then
-    echo "ERROR: Required environment variable $var is not set." >&2
-    exit 1
-  fi
-done
+if [[ -z "${STORAGE_URI:-}" ]]; then
+  echo "ERROR: Required environment variable STORAGE_URI is not set." >&2
+  exit 1
+fi
 
 # Validate category
 VALID_CATEGORIES="design_decision ambiguity bug failure steering"
@@ -68,7 +66,7 @@ if ! echo "$FRAMEWORK_FIX_JSON" | jq empty 2>/dev/null; then
   exit 1
 fi
 
-REMOTE_PATH="s3://${S3_BUCKET}/${TASK_ID}/interventions.json"
+REMOTE_PATH="${STORAGE_URI}/interventions.json"
 TEMP_DIR=$(mktemp -d /tmp/osmo-intervention-XXXXXX)
 trap 'rm -rf "$TEMP_DIR"' EXIT
 

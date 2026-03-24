@@ -5,27 +5,20 @@
 #
 # Purpose-built image for all agent workflows (orchestrator + children).
 # Contains the static framework (prompt, tools, workflow template) baked in.
-# Dynamic content (knowledge docs, code, state) comes from git at runtime.
+# Runs Claude Code headless — no onboarding, no trust prompts, no interactive UI.
 #
 # Build (from repo root):
 #   docker build -t osmo-agent:latest -f docker/agent/Dockerfile .
 #
-# What's baked in (static framework):
-#   /osmo/agent/orchestrator-prompt.md   — the meta-prompt
-#   /osmo/agent/orchestrator.yaml        — unified workflow template
-#   /osmo/agent/tools/*.sh               — DIF infrastructure scripts
-#
-# What's provided by OSMO runtime (not in image):
-#   /osmo/usr/bin/osmo                   — OSMO CLI
-#
-# What comes from git at runtime (dynamic):
-#   Knowledge docs, AGENTS.md, source code, .agent/ state
+# Test locally:
+#   docker run -it --rm -e ANTHROPIC_API_KEY=<key> osmo-agent:latest
+#   claude --print --dangerously-skip-permissions -p "Say hello"
 
 FROM ubuntu:24.04
 
 ENV DEBIAN_FRONTEND=noninteractive
 
-# System tools
+# System tools + sandbox deps (bubblewrap + socat for Claude Code sandbox on Linux)
 RUN apt-get update -qq && \
     apt-get install -y -qq --no-install-recommends \
       git \
@@ -35,6 +28,8 @@ RUN apt-get update -qq && \
       python3-yaml \
       ca-certificates \
       openssh-client \
+      bubblewrap \
+      socat \
     && rm -rf /var/lib/apt/lists/*
 
 # GitHub CLI
@@ -55,16 +50,59 @@ RUN curl -fsSL https://deb.nodesource.com/setup_22.x | bash - && \
 RUN npm install -g @anthropic-ai/claude-code && \
     npm cache clean --force
 
-# OSMO runtime bin path
+# --- Non-root user (Claude Code refuses --dangerously-skip-permissions as root) ---
+RUN useradd -m -s /bin/bash agent && \
+    mkdir -p /workspace && \
+    chown -R agent:agent /workspace
+
+# --- Pre-configure Claude Code for headless operation ---
+# This eliminates ALL interactive prompts: onboarding, theme, trust, API key confirmation.
+RUN mkdir -p /home/agent/.claude && \
+    cat > /home/agent/.claude/settings.json << 'EOF'
+{
+  "permissions": {
+    "allow": [
+      "Bash(*)",
+      "Read(*)",
+      "Write(*)",
+      "Edit(*)",
+      "Glob(*)",
+      "Grep(*)",
+      "WebFetch(*)",
+      "Agent(*)"
+    ],
+    "deny": []
+  }
+}
+EOF
+
+# Mark onboarding as completed so Claude Code never shows welcome/theme/trust screens
+RUN cat > /home/agent/.claude/.onboarding-complete << 'EOF'
+true
+EOF
+
+# Trust all directories (headless — no folder trust prompts)
+RUN cat > /home/agent/.claude/allowed_directories << 'EOF'
+/workspace
+/osmo
+/tmp
+/home/agent
+EOF
+
+RUN chown -R agent:agent /home/agent/.claude
+
+# --- Environment ---
 ENV PATH="/osmo/usr/bin:${PATH}"
+ENV CLAUDE_CODE_SKIP_ONBOARDING=1
 
 # --- Bake in the static framework ---
-COPY scripts/agent/orchestrator/orchestrator-prompt.md /osmo/agent/orchestrator-prompt.md
-COPY scripts/agent/orchestrator/orchestrator.yaml      /osmo/agent/orchestrator.yaml
-COPY scripts/agent/orchestrator/tools/                 /osmo/agent/tools/
-COPY scripts/agent/orchestrator/skills/                /osmo/agent/skills/
+COPY --chown=agent:agent scripts/agent/orchestrator/orchestrator-prompt.md /osmo/agent/orchestrator-prompt.md
+COPY --chown=agent:agent scripts/agent/orchestrator/orchestrator.yaml      /osmo/agent/orchestrator.yaml
+COPY --chown=agent:agent scripts/agent/orchestrator/tools/                 /osmo/agent/tools/
+COPY --chown=agent:agent scripts/agent/orchestrator/skills/                /osmo/agent/skills/
 RUN chmod +x /osmo/agent/tools/*.sh
 
+USER agent
 WORKDIR /workspace
 
 RUN git config --global init.defaultBranch main && \
