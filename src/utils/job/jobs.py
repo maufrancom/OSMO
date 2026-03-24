@@ -1014,8 +1014,8 @@ class UpdateGroup(WorkflowJob):
             return
         workflow_config = context.postgres.get_workflow_configs()
         backend_config_cache = connectors.BackendConfigCache()
-        group_obj = task.TaskGroup.fetch_from_db(context.postgres, self.workflow_id,
-                                                 self.group_name)
+        group_obj = task.TaskGroup.fetch_metadata_from_db(context.postgres, self.workflow_id,
+                                                          self.group_name)
         backend: connectors.Backend | None = None
         try:
             backend = backend_config_cache.get(workflow_obj.backend)
@@ -1104,9 +1104,9 @@ class UpdateGroup(WorkflowJob):
             update_cmd,
             (task_obj.task_db_key, new_task.task_db_key))
 
-        # Refetch group so retry_id is updated
-        group = task.TaskGroup.fetch_from_db(context.postgres, self.workflow_id,
-                                             self.group_name)
+        # Refetch group metadata (tasks not needed — new_task is passed explicitly)
+        group = task.TaskGroup.fetch_metadata_from_db(context.postgres, self.workflow_id,
+                                                      self.group_name)
 
         # Get cleanup job
         labels = {
@@ -1254,7 +1254,7 @@ class RescheduleTask(BackendJob, WorkflowJob):
         be removed from the message queue, or false if the job failed.
         """
         group_name = task.Task.fetch_group_name(context.postgres, self.workflow_id, self.task_name)
-        group = task.TaskGroup.fetch_from_db(
+        group = task.TaskGroup.fetch_metadata_from_db(
             context.postgres, self.workflow_id, group_name)
         if group.status.group_finished():
             # UpdateGroup changed status of all tasks and cleaned up

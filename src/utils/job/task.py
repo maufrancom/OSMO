@@ -1619,12 +1619,16 @@ class TaskGroup(pydantic.BaseModel):
         return fetched_workflow_id
 
     @classmethod
-    def from_db_row(cls, group_row, database, verbose: bool = False) -> 'TaskGroup':
+    def from_db_row(cls, group_row, database, verbose: bool = False,
+                    load_tasks: bool = True) -> 'TaskGroup':
         """
         Gets TaskGroup from DB row
 
         Args:
             verbose (bool, optional): Whether to include rescheduled/restarted tasks.
+            load_tasks (bool, optional): Whether to load task rows. When False,
+                tasks will be an empty list. Use False when only group-level
+                metadata is needed.
         """
         remaining_upstream_groups = set()
         if group_row.remaining_upstream_groups:
@@ -1633,7 +1637,10 @@ class TaskGroup(pydantic.BaseModel):
         if group_row.downstream_groups:
             downstream_groups = decode_hstore(group_row.downstream_groups)
 
-        tasks = Task.list_by_group_name(database, group_row.workflow_id, group_row.name, verbose)
+        tasks: List[Task] = []
+        if load_tasks:
+            tasks = Task.list_by_group_name(
+                database, group_row.workflow_id, group_row.name, verbose)
 
         scheduler_settings: connectors.BackendSchedulerSettings | None = None
         if group_row.scheduler_settings:
@@ -1682,6 +1689,24 @@ class TaskGroup(pydantic.BaseModel):
             raise osmo_errors.OSMODatabaseError(
                 f'Group {name} of workflow {workflow_id} is not found.') from err
         return cls.from_db_row(group_row, database, verbose)
+
+    @classmethod
+    def fetch_metadata_from_db(cls, database: connectors.PostgresConnector,
+                               workflow_id: task_common.NamePattern,
+                               name: task_common.NamePattern) -> 'TaskGroup':
+        """Fetch group metadata without loading task rows. Tasks list will be empty.
+
+        Use this when only group-level fields are needed (status, name, group_uuid,
+        spec, downstream_groups, group_template_resource_types, etc.).
+        """
+        fetch_cmd = 'SELECT * FROM groups WHERE workflow_id = %s AND name = %s;'
+        group_rows = database.execute_fetch_command(fetch_cmd, (workflow_id, name))
+        try:
+            group_row = group_rows[0]
+        except IndexError as err:
+            raise osmo_errors.OSMODatabaseError(
+                f'Group {name} of workflow {workflow_id} is not found.') from err
+        return cls.from_db_row(group_row, database, load_tasks=False)
 
     @classmethod
     def fetch_active_group_size(cls, database: connectors.PostgresConnector,
