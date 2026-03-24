@@ -163,7 +163,7 @@ class Job(pydantic.BaseModel):
         with kombu.Connection(redis_config.redis_url,
             transport_options=options) as conn:
             with kombu.pools.producers[conn].acquire(block=True) as producer:
-                producer.publish(json.loads(self.json()), exchange=exchange,
+                producer.publish(json.loads(self.model_dump_json()), exchange=exchange,
                                  declare=jobs, routing_key=self.job_type)
         self.log_submission()
 
