@@ -348,7 +348,7 @@ def compact_messages(client, model, messages, keep_recent=6):
 # ============================================================
 
 
-def checkpoint(commit_prefix="agent"):
+def checkpoint(commit_prefix="agent", client=None, model=None):
     """Git add + commit + push. Returns True if changes were pushed."""
     try:
         # Check for changes
@@ -370,8 +370,38 @@ def checkpoint(commit_prefix="agent"):
                 return False
 
         subprocess.run(["git", "add", "-A"], capture_output=True, timeout=10)
+
+        # Get diff stat for commit message context
+        diff_stat = subprocess.run(
+            ["git", "diff", "--cached", "--stat"],
+            capture_output=True, text=True, timeout=10,
+        ).stdout.strip()
+
+        # Ask the model for a meaningful commit message
+        msg = None
+        if client and model and diff_stat:
+            try:
+                resp = client.chat.completions.create(
+                    model=model,
+                    messages=[
+                        {"role": "system", "content": "Write a single-line git commit message (max 72 chars, no prefix, no quotes) summarizing these changes. Be specific about what changed, not generic."},
+                        {"role": "user", "content": diff_stat},
+                    ],
+                    max_tokens=60,
+                )
+                summary = resp.choices[0].message.content.strip().strip('"\'')
+                if summary:
+                    msg = f"{commit_prefix}: {summary}"
+                    if len(msg) > 120:
+                        msg = msg[:117] + "..."
+            except Exception as e:
+                sys.stderr.write(f"Commit message generation failed: {e}\n")
+
+        if not msg:
+            msg = f"{commit_prefix}: checkpoint"
+
         result = subprocess.run(
-            ["git", "commit", "-m", f"{commit_prefix}: checkpoint"],
+            ["git", "commit", "-m", msg],
             capture_output=True, text=True, timeout=30,
         )
         if result.returncode != 0:
@@ -452,7 +482,7 @@ def run_agent(client, model, prompt, system_prompt=None,
         # Periodic checkpointing
         if checkpoint_interval > 0 and (turn - last_checkpoint_turn) >= checkpoint_interval:
             sys.stderr.write("Periodic checkpoint...\n")
-            checkpoint(commit_prefix)
+            checkpoint(commit_prefix, client, model)
             last_checkpoint_turn = turn
 
         # API call with exponential backoff (retries forever for transient errors)
@@ -488,7 +518,7 @@ def run_agent(client, model, prompt, system_prompt=None,
         if response is None:
             sys.stderr.write("API error: non-retryable. Checkpointing and exiting.\n")
             if checkpoint_interval > 0:
-                checkpoint(commit_prefix)
+                checkpoint(commit_prefix, client, model)
             break
 
         choice = response.choices[0]
@@ -530,7 +560,7 @@ def run_agent(client, model, prompt, system_prompt=None,
     # Final checkpoint
     if checkpoint_interval > 0:
         sys.stderr.write("Final checkpoint...\n")
-        checkpoint(commit_prefix)
+        checkpoint(commit_prefix, client, model)
 
 
 # ============================================================
