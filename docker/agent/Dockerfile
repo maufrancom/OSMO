@@ -62,6 +62,7 @@ ENV PATH="/osmo/usr/bin:${PATH}"
 COPY scripts/agent/orchestrator/orchestrator-prompt.md /osmo/agent/orchestrator-prompt.md
 COPY scripts/agent/orchestrator/orchestrator.yaml      /osmo/agent/orchestrator.yaml
 COPY scripts/agent/orchestrator/tools/                 /osmo/agent/tools/
+COPY scripts/agent/orchestrator/skills/                /osmo/agent/skills/
 RUN chmod +x /osmo/agent/tools/*.sh
 
 WORKDIR /workspace
