@@ -17,20 +17,20 @@
 # OSMO Agent Workflow — Unified Template
 #
 # Every agent at every level runs this same workflow. The only difference
-# is what SUBTASK_ID is set to:
-#   - Root agent (CEO):  SUBTASK_ID="" → reads task prompt, decomposes entire task
-#   - Child agent:       SUBTASK_ID="st-004" → reads plan.json, works on that subtask
+# is SUBTASK_ID:
+#   - Root agent:  SUBTASK_ID="" → reads task prompt, decomposes entire task
+#   - Child agent: SUBTASK_ID="st-004" → reads .agent/subtasks/st-004.json
 #
-# The agent reads plan.json from git, finds its mandate, and decides whether
-# to execute directly (IC mode) or decompose further (delegate to children).
+# Static framework (prompt, tools) is baked into the image at /osmo/agent/.
+# Dynamic content (knowledge docs, code, state) comes from git.
 #
 # To submit as root:
-#   osmo workflow submit scripts/agent/orchestrator/orchestrator.yaml \
+#   osmo workflow submit /osmo/agent/orchestrator.yaml \
 #     --set task_prompt="Migrate Pydantic v1 to v2.12.5" \
 #     --set knowledge_doc=docs/agent/pydantic-v2-migration.md
 #
 # To submit as child (called by submit-child.sh):
-#   osmo workflow submit scripts/agent/orchestrator/orchestrator.yaml \
+#   osmo workflow submit /osmo/agent/orchestrator.yaml \
 #     --set subtask_id=st-004 --set workflow_name=agent-st-004
 
 workflow:
@@ -72,8 +72,9 @@ workflow:
       contents: |-
         #!/usr/bin/env bash
         # Unified entry script for all agent levels.
-        # SUBTASK_ID="" → root agent (CEO): initializes plan, decomposes task
-        # SUBTASK_ID="st-004" → child agent: reads plan.json, works on subtask
+        #
+        # Static framework:  /osmo/agent/ (baked into image)
+        # Dynamic content:   /workspace/repo (cloned from git)
         set -euo pipefail
 
         echo "=== OSMO Agent ==="
@@ -81,7 +82,7 @@ workflow:
         echo "Branch:   ${BRANCH_NAME}"
         echo "Subtask:  ${SUBTASK_ID:-root}"
 
-        # Setup git auth (all tools pre-installed in agent image)
+        # Setup git auth
         bash /tmp/setup_git.sh
 
         # Clone and checkout branch
@@ -125,18 +126,11 @@ workflow:
           done
         fi
 
-        # Build prompt: same orchestrator-prompt.md for ALL agents
-        PROMPT_FILE="scripts/agent/orchestrator/orchestrator-prompt.md"
-        if [ ! -f "$PROMPT_FILE" ]; then
-          echo "ERROR: $PROMPT_FILE not found in repo."
-          exit 1
-        fi
+        # Build prompt from image (static) + runtime context (dynamic)
+        PROMPT=$(cat /osmo/agent/orchestrator-prompt.md)
 
-        PROMPT=$(cat "$PROMPT_FILE")
-
-        # Append runtime context
+        # Append role context
         if [ -z "${SUBTASK_ID}" ]; then
-          # Root agent: full task context
           PROMPT="${PROMPT}
 
         ## Your Role: Root Agent
@@ -152,7 +146,6 @@ workflow:
         Create subtask files in .agent/subtasks/. Then execute: delegate or do directly.
         "
         else
-          # Child agent: subtask context
           PROMPT="${PROMPT}
 
         ## Your Role: Subtask Agent
@@ -171,14 +164,15 @@ workflow:
         "
         fi
 
-        # Common environment context
+        # Append environment context
         PROMPT="${PROMPT}
         ## Environment
 
         - OSMO CLI: available (\`osmo workflow submit/query/cancel/logs\`, \`osmo data upload/download/list\`)
         - Storage URI: ${STORAGE_URI}
-        - Tools: scripts/agent/orchestrator/tools/
-        - Quality gates: scripts/agent/lint-fast.sh, scripts/agent/quality-gate.sh
+        - Framework tools: /osmo/agent/tools/ (submit-child.sh, poll-workflow.sh, write-question.sh, check-answers.sh, log-intervention.sh)
+        - Quality gates: scripts/agent/lint-fast.sh, scripts/agent/quality-gate.sh (from repo)
+        - Workflow template: /osmo/agent/orchestrator.yaml
         - Working directory: $(pwd)
         "
 

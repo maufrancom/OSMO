@@ -53,11 +53,12 @@ for var in GITHUB_REPO BRANCH_NAME STORAGE_URI KNOWLEDGE_DOC COMMIT_PREFIX; do
   fi
 done
 
-SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-ORCHESTRATOR_YAML="$SCRIPT_DIR/../orchestrator.yaml"
+# Framework files are baked into the image at /osmo/agent/
+ORCHESTRATOR_YAML="/osmo/agent/orchestrator.yaml"
 
 if [[ ! -f "$ORCHESTRATOR_YAML" ]]; then
   echo "ERROR: orchestrator.yaml not found at $ORCHESTRATOR_YAML" >&2
+  echo "Is this running inside the osmo-agent image?" >&2
   exit 1
 fi
 

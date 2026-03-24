@@ -4,20 +4,22 @@
 # OSMO Agent Image
 #
 # Purpose-built image for all agent workflows (orchestrator + children).
-# Pre-installs Claude Code and dev tools. OSMO CLI is provided by the
-# runtime at /osmo/usr/bin — no need to install it here.
+# Contains the static framework (prompt, tools, workflow template) baked in.
+# Dynamic content (knowledge docs, code, state) comes from git at runtime.
 #
-# Build:
+# Build (from repo root):
 #   docker build -t osmo-agent:latest -f docker/agent/Dockerfile .
 #
-# What's already available at runtime (from OSMO):
-#   - /osmo/usr/bin/osmo    — OSMO CLI (workflow submit/query, data upload/download)
-#   - Object storage access via `osmo data upload/download`
+# What's baked in (static framework):
+#   /osmo/agent/orchestrator-prompt.md   — the meta-prompt
+#   /osmo/agent/orchestrator.yaml        — unified workflow template
+#   /osmo/agent/tools/*.sh               — DIF infrastructure scripts
 #
-# What this image adds:
-#   - Claude Code CLI       — LLM reasoning
-#   - git, jq, python3      — DIF script support
-#   - gh                    — GitHub PR creation
+# What's provided by OSMO runtime (not in image):
+#   /osmo/usr/bin/osmo                   — OSMO CLI
+#
+# What comes from git at runtime (dynamic):
+#   Knowledge docs, AGENTS.md, source code, .agent/ state
 
 FROM ubuntu:24.04
 
@@ -53,8 +55,14 @@ RUN curl -fsSL https://deb.nodesource.com/setup_22.x | bash - && \
 RUN npm install -g @anthropic-ai/claude-code && \
     npm cache clean --force
 
-# Ensure OSMO bin path is on PATH (runtime provides /osmo/usr/bin/osmo)
+# OSMO runtime bin path
 ENV PATH="/osmo/usr/bin:${PATH}"
+
+# --- Bake in the static framework ---
+COPY scripts/agent/orchestrator/orchestrator-prompt.md /osmo/agent/orchestrator-prompt.md
+COPY scripts/agent/orchestrator/orchestrator.yaml      /osmo/agent/orchestrator.yaml
+COPY scripts/agent/orchestrator/tools/                 /osmo/agent/tools/
+RUN chmod +x /osmo/agent/tools/*.sh
 
 WORKDIR /workspace
 

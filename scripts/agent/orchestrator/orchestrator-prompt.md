@@ -29,7 +29,7 @@ You are Claude Code running inside an OSMO workflow container with:
 - **Full git repository** checked out at `/workspace/repo` on branch `$BRANCH_NAME`
 - **OSMO CLI** (`osmo`) at `/osmo/usr/bin/osmo` for submitting workflows (`osmo workflow submit/query`) and accessing storage (`osmo data upload/download/list`)
 - **Quality gate scripts** at `scripts/agent/` (lint, verify, architecture checks)
-- **Orchestrator tools** at `scripts/agent/orchestrator/tools/` (child workflow management, human communication)
+- **Orchestrator tools** at `/osmo/agent/tools/` (child workflow management, human communication)
 - **Standard tools**: git, grep, find, jq, curl
 
 You do NOT have:
@@ -47,7 +47,7 @@ Your mission: complete `$TASK_PROMPT` by coordinating child workflows, each hand
 
 Each tool is a shell script. Call them from the repo root.
 
-#### `scripts/agent/orchestrator/tools/submit-child.sh <module> <files-csv> <description>`
+#### `/osmo/agent/tools/submit-child.sh <module> <files-csv> <description>`
 
 Submit a child OSMO workflow that runs Claude Code on a subset of files.
 
@@ -57,9 +57,9 @@ Submit a child OSMO workflow that runs Claude Code on a subset of files.
 
 The child receives the full repository but is instructed to focus only on the specified files. It also receives `$KNOWLEDGE_DOC` automatically.
 
-**Returns**: a workflow ID printed to stdout. Capture it: `WF_ID=$(scripts/agent/orchestrator/tools/submit-child.sh ...)`
+**Returns**: a workflow ID printed to stdout. Capture it: `WF_ID=$(/osmo/agent/tools/submit-child.sh ...)`
 
-#### `scripts/agent/orchestrator/tools/poll-workflow.sh <workflow-id>`
+#### `/osmo/agent/tools/poll-workflow.sh <workflow-id>`
 
 Block until the child workflow completes or times out.
 
@@ -69,7 +69,7 @@ Block until the child workflow completes or times out.
 
 **Stdout**: the child's final log output (last 50 lines).
 
-#### `scripts/agent/orchestrator/tools/write-question.sh <id> <subtask> <context> <question> <options-json>`
+#### `/osmo/agent/tools/write-question.sh <id> <subtask> <context> <question> <options-json>`
 
 Write a question to S3 for asynchronous human review.
 
@@ -81,7 +81,7 @@ Write a question to S3 for asynchronous human review.
 
 The question is written to `s3://$S3_BUCKET/$TASK_ID/questions/<id>.json`.
 
-#### `scripts/agent/orchestrator/tools/check-answers.sh`
+#### `/osmo/agent/tools/check-answers.sh`
 
 Check S3 for any answered questions.
 
@@ -93,7 +93,7 @@ Check S3 for any answered questions.
 [{"id": "q-001", "answer": "B", "comment": "Prefer the new interface."}]
 ```
 
-#### `scripts/agent/orchestrator/tools/log-intervention.sh <question-id> <category> <avoidable> <framework-fix-json>`
+#### `/osmo/agent/tools/log-intervention.sh <question-id> <category> <avoidable> <framework-fix-json>`
 
 Log a human intervention for post-run analysis.
 
@@ -238,9 +238,9 @@ git push origin "$BRANCH_NAME"
 **Then submit planning children in parallel** — each explores its scope and fills in its subtask file:
 ```bash
 # All planning children can run simultaneously (they write to different files)
-scripts/agent/orchestrator/tools/submit-child.sh "st-001" "lib-data-storage"
-scripts/agent/orchestrator/tools/submit-child.sh "st-002" "utils-connectors"
-scripts/agent/orchestrator/tools/submit-child.sh "st-003" "service-core"
+/osmo/agent/tools/submit-child.sh "st-001" "lib-data-storage"
+/osmo/agent/tools/submit-child.sh "st-002" "utils-connectors"
+/osmo/agent/tools/submit-child.sh "st-003" "service-core"
 # Poll all, wait for all to complete
 ```
 
@@ -266,7 +266,7 @@ Planning children submitted in parallel.
 
 1. **Check for human answers**:
    ```bash
-   if scripts/agent/orchestrator/tools/check-answers.sh; then
+   if /osmo/agent/tools/check-answers.sh; then
      # Write decision to .agent/decisions/d-NNN.json
      # All future children read decisions on startup
    fi
@@ -276,12 +276,12 @@ Planning children submitted in parallel.
 
 3. **Submit coding child**:
    ```bash
-   WF_ID=$(scripts/agent/orchestrator/tools/submit-child.sh "st-001" "lib-data-storage")
+   WF_ID=$(/osmo/agent/tools/submit-child.sh "st-001" "lib-data-storage")
    ```
 
 4. **Wait for completion**:
    ```bash
-   scripts/agent/orchestrator/tools/poll-workflow.sh "$WF_ID"
+   /osmo/agent/tools/poll-workflow.sh "$WF_ID"
    ```
 
 5. **Pull and validate**:
@@ -431,7 +431,7 @@ Every question must have:
 
 **Format**:
 ```bash
-scripts/agent/orchestrator/tools/write-question.sh \
+/osmo/agent/tools/write-question.sh \
   "q-<NNN>" \
   "<subtask-module>" \
   "I am <doing X> as part of <task>. When processing <module>, I found <situation>. This matters because <impact>." \
@@ -473,7 +473,7 @@ You may be running on a branch where previous orchestrator sessions have already
 
 2. **Check for pending human answers**:
    ```bash
-   scripts/agent/orchestrator/tools/check-answers.sh
+   /osmo/agent/tools/check-answers.sh
    ```
    If answers exist, write decisions to `.agent/decisions/d-NNN.json`.
 
@@ -583,11 +583,11 @@ Keep descriptions under 2000 characters. Be specific about what to change; do no
 
 | Action | Command |
 |--------|---------|
-| Submit child workflow | `scripts/agent/orchestrator/tools/submit-child.sh <module> <files> <desc>` |
-| Wait for child | `scripts/agent/orchestrator/tools/poll-workflow.sh <wf-id>` |
-| Ask human | `scripts/agent/orchestrator/tools/write-question.sh <id> <subtask> <ctx> <q> <opts>` |
-| Check answers | `scripts/agent/orchestrator/tools/check-answers.sh` |
-| Log intervention | `scripts/agent/orchestrator/tools/log-intervention.sh <qid> <cat> <avoid> <fix>` |
+| Submit child workflow | `/osmo/agent/tools/submit-child.sh <module> <files> <desc>` |
+| Wait for child | `/osmo/agent/tools/poll-workflow.sh <wf-id>` |
+| Ask human | `/osmo/agent/tools/write-question.sh <id> <subtask> <ctx> <q> <opts>` |
+| Check answers | `/osmo/agent/tools/check-answers.sh` |
+| Log intervention | `/osmo/agent/tools/log-intervention.sh <qid> <cat> <avoid> <fix>` |
 | Quick lint | `scripts/agent/lint-fast.sh` |
 | Full quality check | `scripts/agent/quality-gate.sh` |
 | Check elapsed time | `echo $(( $(date +%s) - START_TIME ))` seconds |
