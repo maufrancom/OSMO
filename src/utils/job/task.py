@@ -2050,8 +2050,12 @@ class TaskGroup(pydantic.BaseModel):
                 )
             GROUP BY t.status, t.lead;
         '''
-        return database.execute_fetch_command(
+        status_summary = database.execute_fetch_command(
             fetch_cmd, (workflow_id, group_name, workflow_id, group_name), True)
+        if not status_summary:
+            raise osmo_errors.OSMODatabaseError(
+                f'No tasks were found for {group_name} of workflow {workflow_id}.')
+        return status_summary
 
     def _aggregate_status(self, status_summary: List[Dict]) -> TaskGroupStatus:
         """Gets the group status from a lightweight status summary.

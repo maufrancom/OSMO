@@ -41,7 +41,8 @@ def create_lvm_volume(name: str, size: str):
 
 def create_container(cpu: Union[str, int] = '1', ephemeral_storage: str = '1Gi',
                      memory: str = '1Gi',
-                     name: str = 'user', volume_mounts: List[Any] = []):
+                     name: str = 'user', volume_mounts: List[Any] | None = None):
+    volume_mounts = volume_mounts if volume_mounts is not None else []
     result = {
         'name': name,
         'image': 'ubuntu:latest',
