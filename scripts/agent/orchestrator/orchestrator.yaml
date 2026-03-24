@@ -203,7 +203,10 @@ workflow:
         # If Claude Code crashes, save whatever state exists in git so the
         # next session can resume. Don't use exec — we need the trap to fire.
         set +e
-        claude --print --dangerously-skip-permissions --verbose --output-format stream-json -p "$PROMPT"
+        claude --print --verbose --output-format stream-json \
+          --permission-mode bypassPermissions \
+          --dangerously-skip-permissions \
+          -p "$PROMPT"
         EXIT_CODE=$?
         set -e
 
