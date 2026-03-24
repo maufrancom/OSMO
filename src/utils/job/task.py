@@ -2082,7 +2082,8 @@ class TaskGroup(pydantic.BaseModel):
                     considered_completed_count += count
 
         if any(not s.group_finished() for s in all_statuses):
-            if TaskGroupStatus.RUNNING in all_statuses:
+            if TaskGroupStatus.RUNNING in all_statuses or \
+                    any(s.finished() for s in all_statuses):
                 return TaskGroupStatus.RUNNING
             return TaskGroupStatus.INITIALIZING
         if TaskGroupStatus.FAILED_UPSTREAM in all_statuses:
