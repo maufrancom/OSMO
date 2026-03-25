@@ -138,7 +138,7 @@ TOOLS = [
 _llm_client = None
 _llm_model = None
 
-PEEK_INTERVAL = 30  # seconds between LLM progress checks
+PEEK_INTERVAL = 60  # seconds between LLM progress checks
 
 
 def execute_bash(command):
@@ -190,6 +190,13 @@ def execute_bash(command):
                 if verdict == "kill":
                     process.kill()
                     process.wait()
+                    sys.stderr.write(f"\n  === KILL: dumping progress snapshots ===\n")
+                    for entry in _progress_history:
+                        sys.stderr.write(
+                            f"  --- {entry['elapsed']}s elapsed ---\n"
+                            f"  {entry['snapshot']}\n"
+                        )
+                    sys.stderr.write(f"  === END snapshots ===\n")
                     output_lines.append(
                         f"(killed by LLM after {int(elapsed)}s — "
                         f"determined command is not making progress)"
@@ -210,8 +217,9 @@ _progress_history = []  # list of {"elapsed": int, "line_count": int, "snapshot"
 def _check_progress(command, elapsed_seconds, recent_lines):
     """Ask the LLM whether a long-running command should continue or be killed.
 
-    Maintains history of prior snapshots so the LLM can compare N vs N-1
-    and determine whether forward progress is actually being made.
+    Maintains history of prior snapshots. Only allows a kill verdict when
+    all 5 snapshot slots are filled — giving the command 5 full intervals
+    (5 minutes at 60s) before any kill is possible.
     """
     try:
         snapshot = "\n".join(recent_lines)
@@ -221,15 +229,23 @@ def _check_progress(command, elapsed_seconds, recent_lines):
             "snapshot": snapshot,
         })
 
-        # Keep only last 5 snapshots to avoid overflowing context
+        # Keep only last 5 snapshots
         if len(_progress_history) > 5:
             _progress_history[:] = _progress_history[-5:]
 
-        # Build context showing progression
+        # Don't even ask until we have 5 snapshots — always continue early
+        if len(_progress_history) < 5:
+            sys.stderr.write(
+                f"  [progress check {len(_progress_history)}/5 at {elapsed_seconds}s: "
+                f"continue (collecting snapshots)]\n"
+            )
+            return "continue"
+
+        # Build context showing all 5 snapshots
         history_parts = []
         for i, entry in enumerate(_progress_history):
             history_parts.append(
-                f"--- Check {i + 1} ({entry['elapsed']}s elapsed) ---\n"
+                f"--- Snapshot {i + 1} ({entry['elapsed']}s elapsed) ---\n"
                 f"{entry['snapshot']}"
             )
         history_text = "\n\n".join(history_parts)
@@ -238,14 +254,16 @@ def _check_progress(command, elapsed_seconds, recent_lines):
             model=_llm_model,
             messages=[
                 {"role": "system", "content": (
-                    "You are monitoring a running command. You will see snapshots of "
-                    "the output taken at regular intervals. Compare the latest snapshot "
-                    "to prior ones. Is the command making forward progress (new targets "
-                    "building, new tests running, new output appearing)? Or is it stuck "
-                    "(same output repeated, no new work done, spinning on the same error)?\n\n"
-                    "If it is making progress — even if there are some failures — reply 'continue'. "
+                    "You are monitoring a running command. You will see 5 output snapshots "
+                    "taken at regular intervals. Your job is to determine whether the command "
+                    "is making forward progress.\n\n"
+                    "Only reply 'kill' if ALL 5 snapshots show no forward progress — same "
+                    "output repeated, no new work done, or stuck on the same error across "
+                    "every snapshot. If even one snapshot shows new progress compared to the "
+                    "previous one, reply 'continue'.\n\n"
                     "Failures mixed with progress means let it finish to collect all results.\n"
-                    "If it is stuck or doing the completely wrong thing, reply 'kill'.\n\n"
+                    "A command that intentionally produces no output (e.g., sleep, tail -f, "
+                    "port-forward) is not stuck — reply 'continue'.\n\n"
                     "Reply with exactly one word: 'continue' or 'kill'."
                 )},
                 {"role": "user", "content": (
@@ -255,7 +273,7 @@ def _check_progress(command, elapsed_seconds, recent_lines):
             max_tokens=10,
         )
         verdict = resp.choices[0].message.content.strip().lower()
-        sys.stderr.write(f"  [progress check {len(_progress_history)} at {elapsed_seconds}s: {verdict}]\n")
+        sys.stderr.write(f"  [progress check 5/5 at {elapsed_seconds}s: {verdict}]\n")
         return "kill" if "kill" in verdict else "continue"
     except Exception as e:
         sys.stderr.write(f"  [progress check failed: {e} — continuing]\n")
