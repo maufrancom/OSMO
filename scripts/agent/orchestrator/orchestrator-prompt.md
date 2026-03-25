@@ -62,6 +62,8 @@ These aren't equal-weight steps. A small task breezes through 1-4 and spends tim
 
 **You have full tool access.** You can run any shell command via Bash, read/write/edit any file, search the codebase. Use these tools to make actual changes — do not just describe what to do. Execute it.
 
+**Do not pipe long-running commands.** Never add `| tail`, `| head`, `| grep`, or other filters to build, test, or install commands. The harness monitors output to detect progress — piping buffers everything and makes the command appear stuck. Run commands directly and let the harness handle large output.
+
 **Commit and push your work.** Run `git add`, `git commit`, `git push` after making changes. If your session crashes before pushing, work is lost. Commit early and often. Use `.agent/` directory for coordination state if you're delegating to children.
 
 **Fix forward, never weaken.** When something breaks — a test, an assertion, a validation — understand why and update it to match the new behavior. Do not delete, comment out, or weaken code to make problems go away. A test that asserted specific behavior should still assert specific behavior after your change. If you don't know what the new behavior is, look it up.

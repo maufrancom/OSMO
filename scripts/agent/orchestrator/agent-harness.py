@@ -39,7 +39,7 @@ TOOLS = [
         "type": "function",
         "function": {
             "name": "Bash",
-            "description": "Execute a bash command. Returns stdout and stderr. Commands run as long as they are making progress — the harness monitors output and decides when to stop.",
+            "description": "Execute a bash command. Returns stdout and stderr. Commands run as long as they are making progress — the harness monitors output and decides when to stop. Do NOT pipe long-running commands through tail, grep, or head — this buffers all output and prevents progress monitoring. Let the full output stream through; the harness handles large output.",
             "parameters": {
                 "type": "object",
                 "properties": {
