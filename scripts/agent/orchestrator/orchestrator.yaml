@@ -46,6 +46,7 @@ workflow:
     image: "{{agent_image}}"
     command: [/bin/bash]
     args: [/tmp/entry.sh]
+    privileged: true
     exitActions:
       COMPLETE: 0
       FAIL: 80-99
@@ -138,6 +139,23 @@ workflow:
           if ! osmo data check "${STORAGE_URI}" --access-type WRITE > /dev/null 2>&1; then
             echo "FATAL: Cannot write to ${STORAGE_URI}. Check storage credentials."
             exit 80
+          fi
+        fi
+
+        # Start Docker daemon if available (for testcontainers, DinD)
+        if command -v dockerd > /dev/null 2>&1; then
+          echo "Starting Docker daemon..."
+          sudo dockerd &>/tmp/dockerd.log &
+          # Wait for Docker to be ready
+          for i in $(seq 1 30); do
+            if docker info > /dev/null 2>&1; then
+              echo "Docker: ready"
+              break
+            fi
+            sleep 1
+          done
+          if ! docker info > /dev/null 2>&1; then
+            echo "WARNING: Docker daemon failed to start. Tests requiring containers will fail."
           fi
         fi
 

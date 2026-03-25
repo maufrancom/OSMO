@@ -25,6 +25,7 @@ import pty
 import select
 import subprocess
 import sys
+import threading
 import time
 
 from openai import OpenAI
@@ -39,7 +40,7 @@ TOOLS = [
         "type": "function",
         "function": {
             "name": "Bash",
-            "description": "Execute a bash command. Returns stdout and stderr. Commands run as long as they are making progress — the harness monitors output and decides when to stop. Do NOT pipe long-running commands through tail, grep, or head — this buffers all output and prevents progress monitoring. Let the full output stream through; the harness handles large output.",
+            "description": "Execute a bash command. Returns stdout and stderr. The harness monitors output to detect progress. NEVER pipe through tail/head/grep — piping buffers ALL output, harness sees nothing, command gets killed.",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -155,12 +156,14 @@ def execute_bash(command):
     try:
         _progress_history.clear()
 
-        # Use a PTY so commands think they're in a terminal and produce progress output
+        # Use a PTY so commands think they're in a terminal and produce progress output.
+        # Start in a new process group so we can kill the entire tree (e.g., bazel server).
         primary_fd, replica_fd = pty.openpty()
         process = subprocess.Popen(
             ["bash", "-c", command],
             stdout=replica_fd, stderr=replica_fd,
             close_fds=True, cwd=os.getcwd(),
+            preexec_fn=os.setsid,
         )
         os.close(replica_fd)
 
@@ -173,26 +176,36 @@ def execute_bash(command):
         last_peek_time = start
 
         while True:
-            ready = select.select([pty_reader], [], [], 1.0)[0]
+            # Check if process exited FIRST — don't block on readline for a dead process
+            if process.poll() is not None:
+                # Drain any remaining output
+                try:
+                    while select.select([pty_reader], [], [], 0.1)[0]:
+                        line = pty_reader.readline()
+                        if not line:
+                            break
+                        clean = line.rstrip()
+                        if clean:
+                            output_lines.append(clean)
+                            sys.stderr.write(f"  | {clean}\n")
+                            sys.stderr.flush()
+                except OSError:
+                    pass
+                break
 
+            ready = select.select([pty_reader], [], [], 1.0)[0]
             if ready:
                 try:
                     line = pty_reader.readline()
                 except OSError:
-                    # PTY closed — process exited
                     break
                 if line:
-                    # Strip terminal control codes for clean output
                     clean = line.rstrip()
                     if clean:
                         output_lines.append(clean)
                         sys.stderr.write(f"  | {clean}\n")
                         sys.stderr.flush()
                         last_output_time = time.time()
-                elif process.poll() is not None:
-                    break
-            elif process.poll() is not None:
-                break
 
             now = time.time()
             elapsed = now - start
@@ -205,7 +218,11 @@ def execute_bash(command):
                 recent = output_lines[-30:] if output_lines else [f"(no output for {silent}s)"]
                 verdict = _check_progress(command, int(elapsed), recent)
                 if verdict == "kill":
-                    process.kill()
+                    # Kill entire process group (bazel server, child processes, etc.)
+                    try:
+                        os.killpg(os.getpgid(process.pid), 9)
+                    except ProcessLookupError:
+                        pass
                     process.wait()
                     sys.stderr.write(f"\n  === KILL: dumping progress snapshots ===\n")
                     for entry in _progress_history:
@@ -214,10 +231,18 @@ def execute_bash(command):
                             f"  {entry['snapshot']}\n"
                         )
                     sys.stderr.write(f"  === END snapshots ===\n")
-                    output_lines.append(
-                        f"(killed by LLM after {int(elapsed)}s — "
-                        f"determined command is not making progress)"
-                    )
+
+                    # Tell the LLM WHY — if piped, call it out
+                    has_pipe = "|" in command
+                    kill_msg = f"(killed after {int(elapsed)}s — no progress detected."
+                    if has_pipe:
+                        kill_msg += (
+                            " NOTE: This command used a pipe (| tail, | grep, etc.) which "
+                            "buffers output and prevents progress monitoring. Retry WITHOUT "
+                            "piping — run the command directly."
+                        )
+                    kill_msg += ")"
+                    output_lines.append(kill_msg)
                     break
 
         pty_reader.close()
@@ -274,17 +299,10 @@ def _check_progress(command, elapsed_seconds, recent_lines):
             model=_llm_model,
             messages=[
                 {"role": "system", "content": (
-                    "You are monitoring a running command. You will see 5 output snapshots "
-                    "taken at regular intervals. Your job is to determine whether the command "
-                    "is making forward progress.\n\n"
-                    "Only reply 'kill' if ALL 5 snapshots show no forward progress — same "
-                    "output repeated, no new work done, or stuck on the same error across "
-                    "every snapshot. If even one snapshot shows new progress compared to the "
-                    "previous one, reply 'continue'.\n\n"
-                    "Failures mixed with progress means let it finish to collect all results.\n"
-                    "A command that intentionally produces no output (e.g., sleep, tail -f, "
-                    "port-forward) is not stuck — reply 'continue'.\n\n"
-                    "Reply with exactly one word: 'continue' or 'kill'."
+                    "You are monitoring a running command. You see 5 output snapshots "
+                    "taken at regular intervals. Reply 'kill' only if ALL 5 show no "
+                    "forward progress. Otherwise reply 'continue'. "
+                    "One word only: 'continue' or 'kill'."
                 )},
                 {"role": "user", "content": (
                     f"Command: {command}\n\n{history_text}"
@@ -414,17 +432,14 @@ def estimate_tokens(messages):
     return total_chars // CHARS_PER_TOKEN
 
 
+COMPACT_MARKER = "[CONTEXT SUMMARY"
+
+
 def compact_messages(client, model, messages, keep_recent=6):
-    """Summarize older messages to free context space.
+    """Rolling compaction: merges prior summary + new messages into a richer summary.
 
-    Keeps the system message (if any), summarizes middle messages into a single
-    user message, and keeps the most recent `keep_recent` messages intact.
-
-    Args:
-        client: OpenAI client
-        model: Model to use for summarization
-        messages: Full message list
-        keep_recent: Number of recent messages to preserve verbatim
+    Each compaction builds on the last, so the summary carries forward the
+    full compressed history rather than summarizing a summary (telephone game).
     """
     # Find boundaries
     has_system = messages[0]["role"] == "system" if messages else False
@@ -435,12 +450,28 @@ def compact_messages(client, model, messages, keep_recent=6):
     if len(rest) <= keep_recent + 2:
         return messages
 
-    old_messages = rest[:-keep_recent]
-    recent_messages = rest[-keep_recent:]
+    # Find safe split point — don't orphan tool results from their tool_use
+    split = len(rest) - keep_recent
+    while split > 0 and split < len(rest) and rest[split].get("role") == "tool":
+        split -= 1
 
-    # Build summary of old messages
-    summary_parts = []
-    for msg in old_messages:
+    old_messages = rest[:split]
+    recent_messages = rest[split:]
+
+    # Extract prior summary if it exists (from a previous compaction)
+    prior_summary = ""
+    new_messages = old_messages
+    for i, msg in enumerate(old_messages):
+        content = msg.get("content", "")
+        if isinstance(content, str) and content.startswith(COMPACT_MARKER):
+            prior_summary = content
+            # Skip the summary message and the "Understood" response after it
+            new_messages = old_messages[i + 2:] if i + 2 <= len(old_messages) else []
+            break
+
+    # Build digest of new messages (since last compaction)
+    new_parts = []
+    for msg in new_messages:
         role = msg.get("role", "unknown")
         content = msg.get("content", "")
         if role == "assistant" and msg.get("tool_calls"):
@@ -450,39 +481,54 @@ def compact_messages(client, model, messages, keep_recent=6):
                     tool_names.append(tc.get("function", {}).get("name", "?"))
                 else:
                     tool_names.append(tc.function.name)
-            summary_parts.append(f"[assistant called: {', '.join(tool_names)}]")
+            new_parts.append(f"[assistant called: {', '.join(tool_names)}]")
             if content:
-                summary_parts.append(f"[assistant said: {content[:200]}]")
+                new_parts.append(f"[assistant said: {content[:200]}]")
         elif role == "tool":
-            # Truncate large tool results aggressively
-            summary_parts.append(f"[tool result: {content[:150]}...]" if len(content) > 150 else f"[tool result: {content}]")
+            new_parts.append(f"[tool result: {content[:150]}...]" if len(
+                content) > 150 else f"[tool result: {content}]")
         elif role == "user":
-            summary_parts.append(f"[user: {content[:300]}]")
+            new_parts.append(f"[user: {content[:300]}]")
         elif role == "assistant":
-            summary_parts.append(f"[assistant: {content[:300]}]")
+            new_parts.append(f"[assistant: {content[:300]}]")
 
-    summary_text = "\n".join(summary_parts)
+    new_text = "\n".join(new_parts)
 
-    # Ask the model to compress this into a working summary
+    # Build the compaction prompt: prior summary + new activity
+    if prior_summary:
+        compact_input = (
+            f"PRIOR SUMMARY (from earlier compaction):\n{prior_summary}\n\n"
+            f"NEW ACTIVITY (since that summary):\n{new_text}"
+        )
+    else:
+        compact_input = new_text
+
+    # Ask the model to produce a merged summary
     try:
         compress_response = client.chat.completions.create(
             model=model,
             messages=[
-                {"role": "system", "content": "You are a context compactor. Summarize the following conversation history into a concise working memory. Preserve: (1) what task is being done, (2) what files have been modified and how, (3) what decisions were made, (4) what remains to be done. Be specific about file paths and changes. Output only the summary, no preamble."},
-                {"role": "user", "content": summary_text},
+                {"role": "system", "content": (
+                    "You are a context compactor. Merge the prior summary with new activity "
+                    "into a single, updated working memory. Preserve: (1) what task is being done, "
+                    "(2) ALL files modified and how, (3) decisions made, (4) what remains to be done, "
+                    "(5) errors encountered and how they were resolved. Be specific about file paths. "
+                    "The merged summary must be complete — a future reader should understand the full "
+                    "history from this summary alone. Output only the summary, no preamble."
+                )},
+                {"role": "user", "content": compact_input},
             ],
-            max_tokens=2048,
+            max_tokens=4096,
         )
         compact_summary = compress_response.choices[0].message.content
     except Exception as e:
         sys.stderr.write(f"Compaction failed: {e}. Falling back to truncation.\n")
-        # Fallback: just keep recent messages
-        compact_summary = f"[Earlier conversation truncated. {len(old_messages)} messages summarized.]\n{summary_text[-2000:]}"
+        compact_summary = f"[Compaction failed. Prior summary preserved.]\n{prior_summary}\n\n[Recent activity:]\n{new_text[-2000:]}"
 
-    # Rebuild messages: system + summary + recent
+    # Rebuild: system + merged summary + recent
     compacted = prefix + [
-        {"role": "user", "content": f"[CONTEXT SUMMARY — earlier conversation compacted to save space]\n\n{compact_summary}"},
-        {"role": "assistant", "content": "Understood. I have the context from the summary. Continuing with the task."},
+        {"role": "user", "content": f"{COMPACT_MARKER} — rolling history]\n\n{compact_summary}"},
+        {"role": "assistant", "content": "Understood. I have the full context from the summary. Continuing with the task."},
     ] + recent_messages
 
     sys.stderr.write(f"Compacted: {len(messages)} messages -> {len(compacted)} messages "
@@ -531,7 +577,8 @@ def checkpoint(commit_prefix="agent", client=None, model=None):
                 resp = client.chat.completions.create(
                     model=model,
                     messages=[
-                        {"role": "system", "content": "Write a single-line git commit message (max 72 chars, no prefix, no quotes) summarizing these changes. Be specific about what changed, not generic."},
+                        {"role": "system",
+                            "content": "Write a single-line git commit message (max 72 chars, no prefix, no quotes) summarizing these changes. Be specific about what changed, not generic."},
                         {"role": "user", "content": diff_stat},
                     ],
                     max_tokens=60,
@@ -591,7 +638,6 @@ TOKEN_COMPACT_THRESHOLD = 40_000
 MESSAGE_COMPACT_THRESHOLD = 100
 
 
-
 # ============================================================
 # Hard Gates
 # ============================================================
@@ -620,18 +666,100 @@ def _check_gates():
     return blockers
 
 
+def _review_quality_claim(quality_json):
+    """Independent LLM review of a quality verification claim.
+
+    Called only when the agent claims passed=true. Checks whether the
+    verification is legitimate — did it run the right commands, or did
+    it substitute easier alternatives to pass?
+    """
+    if not _llm_client:
+        return True  # no client, trust the claim
+
+    quality_gates = ""
+    try:
+        with open(".agent/discovered/quality-gates.json", "r") as f:
+            quality_gates = f.read()
+    except FileNotFoundError:
+        return True  # no gates to compare against
+
+    try:
+        resp = _llm_client.chat.completions.create(
+            model=_llm_model,
+            messages=[
+                {"role": "system", "content": (
+                    "You are reviewing a quality verification claim. "
+                    "Compare the discovered quality gates with what the agent claims to have run. "
+                    "Reply 'accept' if the agent ran the discovered commands (or equivalent). "
+                    "Reply 'reject' if the agent substituted different commands to pass "
+                    "(e.g., ran pytest instead of bazel test, or skipped commands). "
+                    "One word only: 'accept' or 'reject'."
+                )},
+                {"role": "user", "content": (
+                    f"Discovered quality gates:\n{quality_gates}\n\n"
+                    f"Agent's verification claim:\n{quality_json}"
+                )},
+            ],
+            max_tokens=10,
+        )
+        verdict = resp.choices[0].message.content.strip().lower()
+        sys.stderr.write(f"  [quality review: {verdict}]\n")
+        return "accept" in verdict
+    except Exception as e:
+        sys.stderr.write(f"  [quality review failed: {e} — accepting]\n")
+        return True
+
+
 def _check_completion_gates():
-    """Check gates that block the agent from declaring done. Returns list of BLOCKED messages."""
+    """Check gates that block the agent from declaring done.
+
+    Reads the agent's own quality-gates.json (written during discovery) and
+    verifies that quality-verified.json references the discovered commands.
+    The agent is held to its own discovery — no hardcoded build systems.
+    """
     blockers = []
 
-    # Gate: quality verification must happen before finishing
-    if not os.path.exists(GATE_QUALITY):
-        blockers.append(
-            "BLOCKED: You cannot finish without running quality verification. "
-            "/tmp/quality-verified.json does not exist. Run the repo's quality gates "
-            "(see .agent/discovered/quality-gates.json) and write /tmp/quality-verified.json "
-            "with the results. If you cannot run them, write the file explaining why you are blocked."
-        )
+    # Check if quality verification passed — not just that the file exists.
+    # When the agent claims passed=true, a separate LLM reviews the findings
+    # to catch false positives (e.g., ran pytest instead of bazel test).
+    quality_passed = False
+    if os.path.exists(GATE_QUALITY):
+        try:
+            with open(GATE_QUALITY, "r") as f:
+                qv_content = f.read()
+                qv = json.loads(qv_content)
+            if qv.get("passed", False) is True:
+                # Second opinion: does the verification look legitimate?
+                quality_passed = _review_quality_claim(qv_content)
+        except (json.JSONDecodeError, OSError):
+            pass
+
+    if not quality_passed:
+        # Read the agent's discovered quality gates to include in the message
+        quality_gates = ""
+        try:
+            with open(".agent/discovered/quality-gates.json", "r") as f:
+                quality_gates = f.read()
+        except FileNotFoundError:
+            pass
+
+        if quality_gates:
+            blockers.append(
+                "BLOCKED: Quality verification required. "
+                "During discovery you wrote these quality gates:\n\n"
+                f"{quality_gates}\n\n"
+                "NEVER substitute different commands to pass verification. "
+                "Run exactly what you discovered — these are the repo's gates, not yours to change. "
+                "Write /tmp/quality-verified.json with \"passed\": true only when "
+                "zero errors and zero warnings. Include actionable findings."
+            )
+        else:
+            blockers.append(
+                "BLOCKED: Quality verification required. "
+                "Run the repo's quality gates. Write /tmp/quality-verified.json "
+                "with \"passed\": true only when zero errors and zero warnings. "
+                "Include actionable findings."
+            )
 
     return blockers
 
@@ -659,10 +787,20 @@ def run_agent(client, model, prompt, system_prompt=None,
 
     turn = 0
     last_checkpoint_turn = 0
+    quality_history = []  # track quality verification attempts
+    turn_start = time.time()
+    session_start = turn_start
 
     while True:
         turn += 1
-        sys.stderr.write(f"\n--- Turn {turn} ---\n")
+        now = time.time()
+        turn_elapsed = int(now - turn_start)
+        session_elapsed = int(now - session_start)
+        turn_start = now
+        sys.stderr.write(
+            f"\n--- Turn {turn} | {session_elapsed}s elapsed | "
+            f"last turn {turn_elapsed}s ---\n"
+        )
 
         # Context compaction check (token count OR message count)
         estimated_tokens = estimate_tokens(messages)
@@ -692,12 +830,31 @@ def run_agent(client, model, prompt, system_prompt=None,
         attempt = 0
         while True:
             try:
-                response = client.chat.completions.create(
-                    model=model,
-                    messages=messages,
-                    tools=TOOLS,
-                    max_tokens=16384,
-                )
+                # Run API call in background thread, heartbeat while waiting
+                api_result = {"response": None, "error": None}
+
+                def _call_api():
+                    try:
+                        api_result["response"] = client.chat.completions.create(
+                            model=model,
+                            messages=messages,
+                            tools=TOOLS,
+                        )
+                    except Exception as api_err:
+                        api_result["error"] = api_err
+
+                thread = threading.Thread(target=_call_api)
+                thread.start()
+                heartbeat = 0
+                while thread.is_alive():
+                    thread.join(timeout=30)
+                    if thread.is_alive():
+                        heartbeat += 1
+                        sys.stderr.write(f"  [waiting for API response... {heartbeat * 30}s]\n")
+
+                if api_result["error"]:
+                    raise api_result["error"]
+                response = api_result["response"]
                 break
             except Exception as e:
                 attempt += 1
@@ -705,7 +862,7 @@ def run_agent(client, model, prompt, system_prompt=None,
                 status_code = getattr(e, "status_code", None)
 
                 # Non-retryable errors: auth, model not found, bad request
-                if status_code in (401, 403, 404, 422):
+                if status_code in (400, 401, 403, 404, 422):
                     sys.stderr.write(f"API error (non-retryable, {status_code}): {error_str}\n")
                     break
 
@@ -737,9 +894,31 @@ def run_agent(client, model, prompt, system_prompt=None,
         if not message.tool_calls:
             blockers = _check_completion_gates()
             if blockers:
+                # Read current quality file to track what failed this attempt
+                attempt_info = ""
+                if os.path.exists(GATE_QUALITY):
+                    try:
+                        with open(GATE_QUALITY, "r") as f:
+                            attempt_info = f.read()
+                    except OSError:
+                        pass
+                quality_history.append(attempt_info or "(no quality file written)")
+
+                # Show the LLM its own history so it can reason about progress
+                history_text = ""
+                if len(quality_history) > 1:
+                    history_parts = []
+                    for i, entry in enumerate(quality_history):
+                        history_parts.append(f"--- Attempt {i + 1} ---\n{entry}")
+                    history_text = (
+                        "\n\nYour previous quality verification attempts:\n\n"
+                        + "\n\n".join(history_parts)
+                        + "\n\nCompare these attempts. Are you making progress? "
+                        "Are the same errors repeating? Reason about what to try next."
+                    )
+
                 for b in blockers:
-                    messages.append({"role": "user", "content": b})
-                # Don't break — force the agent to continue
+                    messages.append({"role": "user", "content": b + history_text})
                 continue
             sys.stderr.write(f"\nAgent finished after {turn} turns.\n")
             break
