@@ -21,10 +21,10 @@ import argparse
 import glob as glob_module
 import json
 import os
+import select
 import subprocess
 import sys
 import time
-
 
 from openai import OpenAI
 
@@ -38,12 +38,11 @@ TOOLS = [
         "type": "function",
         "function": {
             "name": "Bash",
-            "description": "Execute a bash command. Returns stdout and stderr. Commands run as long as they produce output. Killed only if no output for `timeout` seconds (default 120). A build that takes 30 minutes but keeps printing progress will run to completion.",
+            "description": "Execute a bash command. Returns stdout and stderr. Commands run as long as they are making progress — the harness monitors output and decides when to stop.",
             "parameters": {
                 "type": "object",
                 "properties": {
                     "command": {"type": "string", "description": "The bash command to execute"},
-                    "timeout": {"type": "integer", "description": "Inactivity timeout in seconds (default 120). Command is killed if no output for this long."},
                 },
                 "required": ["command"],
             },
@@ -142,16 +141,13 @@ _llm_model = None
 PEEK_INTERVAL = 30  # seconds between LLM progress checks
 
 
-def execute_bash(command, timeout=120):
-    """Execute a bash command. Keeps running as long as there's output.
+def execute_bash(command, timeout=None):
+    """Execute a bash command. No artificial time limits.
 
-    Inactivity timeout: killed if no output for `timeout` seconds.
-    Progress checks: every 60s of active output, sends recent output to
-    the LLM to assess whether the command is on track. LLM can say "kill"
-    if it sees errors piling up or the wrong thing happening.
+    The LLM monitors progress every PEEK_INTERVAL seconds and decides
+    whether to continue or kill. If the LLM client is not available,
+    the command runs until it finishes on its own.
     """
-    import select
-
     try:
         _progress_history.clear()
 
@@ -182,24 +178,14 @@ def execute_bash(command, timeout=120):
                 break
 
             now = time.time()
-            silent = now - last_output_time
             elapsed = now - start
 
-            # Inactivity timeout — two rounds of silence before killing
-            if silent > timeout * 2:
-                process.kill()
-                process.wait()
-                output_lines.append(
-                    f"(killed: no output for {int(silent)}s — appears stuck. "
-                    f"Total runtime: {int(elapsed)}s, {len(output_lines)} lines captured)"
-                )
-                break
-
-            # LLM progress check — let the LLM decide on all conditions:
-            # progress, repetition, wrong track
-            if _llm_client and elapsed > PEEK_INTERVAL and now - last_peek_time > PEEK_INTERVAL:
+            # LLM progress check — the LLM decides everything:
+            # inactivity, repetition, wrong track
+            if _llm_client and now - last_peek_time > PEEK_INTERVAL:
                 last_peek_time = now
-                recent = output_lines[-30:] if output_lines else ["(no output)"]
+                silent = int(now - last_output_time)
+                recent = output_lines[-30:] if output_lines else [f"(no output for {silent}s)"]
                 verdict = _check_progress(command, int(elapsed), recent)
                 if verdict == "kill":
                     process.kill()
@@ -234,6 +220,10 @@ def _check_progress(command, elapsed_seconds, recent_lines):
             "line_count": len(recent_lines),
             "snapshot": snapshot,
         })
+
+        # Keep only last 5 snapshots to avoid overflowing context
+        if len(_progress_history) > 5:
+            _progress_history[:] = _progress_history[-5:]
 
         # Build context showing progression
         history_parts = []
@@ -347,7 +337,7 @@ def execute_grep(pattern, path=None, include=None):
 def execute_tool(name, args_json):
     args = json.loads(args_json) if isinstance(args_json, str) else args_json
     if name == "Bash":
-        return execute_bash(args["command"], args.get("timeout", 600))
+        return execute_bash(args["command"])
     elif name == "Read":
         return execute_read(args["file_path"], args.get("offset"), args.get("limit"))
     elif name == "Write":
@@ -570,8 +560,16 @@ def run_preflight(client, model, commit_prefix="agent"):
 
     The agent must produce environment.json before the main task starts.
     This is a DIF gate — the harness checks for the artifact, not the LLM.
+
+    Sets _llm_client/_llm_model so execute_bash progress checks work during preflight.
     """
+    global _llm_client, _llm_model
+    _llm_client = client
+    _llm_model = model
+
+    cwd = os.getcwd()
     preflight_prompt = (
+        f"The repo is checked out at {cwd} (your current working directory). "
         "Read /osmo/agent/skills/preflight.md and execute every step. "
         "You must produce /tmp/environment.json before you are done. "
         "Do not commit this file — it is a runtime artifact. "
@@ -583,8 +581,8 @@ def run_preflight(client, model, commit_prefix="agent"):
         {"role": "system", "content": (
             "You are an agent performing environment preflight. "
             "Your ONLY job is to align your container's runtime with the repo's target versions. "
-            "Read the preflight skill, execute it, write environment.json, commit, and stop. "
-            "Do not do anything else."
+            "Read the preflight skill, execute it, write /tmp/environment.json, and stop. "
+            "Do not commit this file. Do not do anything else."
         )},
         {"role": "user", "content": preflight_prompt},
     ]
