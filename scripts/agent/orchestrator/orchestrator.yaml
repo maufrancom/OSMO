@@ -145,7 +145,7 @@ workflow:
         # Start Docker daemon if available (for testcontainers, DinD)
         if command -v dockerd > /dev/null 2>&1; then
           echo "Starting Docker daemon..."
-          sudo dockerd &>/tmp/dockerd.log &
+          sudo dockerd --storage-driver=vfs &>/tmp/dockerd.log &
           # Wait for Docker to be ready
           for i in $(seq 1 30); do
             if docker info > /dev/null 2>&1; then

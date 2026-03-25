@@ -9,14 +9,9 @@ Validation is a HARD GATE. You cannot declare success without it. If you made co
 
 ## Discover Before Validating
 
-During the Discovery phase, you should have identified how this repo validates code. Use whatever you found:
+During the Discovery phase, you should have identified how this repo validates code. Use whatever you found.
 
-- Repo-specific scripts (e.g., `scripts/agent/quality-gate.sh`, `make test`, `npm run lint`)
-- CI config commands (from `.github/workflows/`, `.gitlab-ci.yml`)
-- Package scripts (from `package.json` scripts section)
-- Makefile targets
-
-**Use the repo's tooling, not your own.** If the repo uses a build system for testing, use that build system — do not bypass it with a standalone test runner. The build system manages dependencies, environment, and test configuration. Running tests outside of it produces results that don't match CI. If the repo's tooling doesn't work, that's a problem to fix, not a reason to substitute your own approach.
+**Use the repo's tooling, not your own.** If the repo's tooling doesn't work, fix it or report blocked — don't substitute your own.
 
 ## Fallbacks (When Repo Has No Tooling)
 
