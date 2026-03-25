@@ -242,6 +242,9 @@ workflow:
         "
         fi
 
+        # Report container runtimes — the agent compares against repo targets during alignment
+        CONTAINER_RUNTIMES=$(echo "python3=$(python3 --version 2>&1 | awk '{print $2}'), bazel=$(bazel --version 2>/dev/null | awk '{print $2}' || echo 'N/A'), go=$(go version 2>/dev/null | awk '{print $3}' | sed 's/go//' || echo 'N/A'), node=$(node --version 2>/dev/null || echo 'N/A')")
+
         # Append environment context
         PROMPT="${PROMPT}
         ## Environment
@@ -253,6 +256,8 @@ workflow:
         - Working directory: $(pwd)
         - Knowledge doc: ${KNOWLEDGE_DOC:-not provided — discover from repo}
         - Additional context: ${ADDITIONAL_CONTEXT:-none}
+        - Container runtimes: ${CONTAINER_RUNTIMES}
+        - **These may not match the repo's targets. Phase 2 (Align runtime) must verify and fix any mismatches before proceeding.**
         "
 
         # ============================================================

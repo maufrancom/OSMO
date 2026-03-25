@@ -40,6 +40,8 @@ If a tool is blocked, unavailable, or broken:
 
 An agent that changes files and says "done" without running tests is worse than one that says "blocked — couldn't run tests." The first creates false confidence. The second is honest.
 
+After running quality gates, write `/tmp/quality-verified.json` with what you ran and the results. The harness will not let you finish without this file.
+
 ## When Validation Fails
 
 1. Read the error output carefully

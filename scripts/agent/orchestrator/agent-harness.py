@@ -141,7 +141,7 @@ _llm_model = None
 PEEK_INTERVAL = 30  # seconds between LLM progress checks
 
 
-def execute_bash(command, timeout=None):
+def execute_bash(command):
     """Execute a bash command. No artificial time limits.
 
     The LLM monitors progress every PEEK_INTERVAL seconds and decides
@@ -552,86 +552,50 @@ def checkpoint(commit_prefix="agent", client=None, model=None):
 TOKEN_COMPACT_THRESHOLD = 40_000
 MESSAGE_COMPACT_THRESHOLD = 100
 
-PREFLIGHT_ARTIFACT = "/tmp/environment.json"
 
 
-def run_preflight(client, model, commit_prefix="agent"):
-    """Run preflight as a separate, focused agent conversation.
+# ============================================================
+# Hard Gates
+# ============================================================
+# Each gate maps a non-negotiable behavior to an artifact.
+# The harness checks for the artifact and blocks the agent
+# until it exists. This compensates for prompt-level guardrails
+# that the LLM tends to rationalize past.
 
-    The agent must produce environment.json before the main task starts.
-    This is a DIF gate — the harness checks for the artifact, not the LLM.
+GATE_ALIGNMENT = "/tmp/environment.json"
+GATE_QUALITY = "/tmp/quality-verified.json"
 
-    Sets _llm_client/_llm_model so execute_bash progress checks work during preflight.
-    """
-    global _llm_client, _llm_model
-    _llm_client = client
-    _llm_model = model
 
-    cwd = os.getcwd()
-    preflight_prompt = (
-        f"The repo is checked out at {cwd} (your current working directory). "
-        "Read /osmo/agent/skills/preflight.md and execute every step. "
-        "You must produce /tmp/environment.json before you are done. "
-        "Do not commit this file — it is a runtime artifact. "
-        "Do nothing else — no discovery, no code changes, no planning. Only preflight."
-    )
+def _check_gates():
+    """Check gates that block during execution. Returns list of BLOCKED messages."""
+    blockers = []
 
-    sys.stderr.write("\n=== Preflight phase ===\n")
-    messages = [
-        {"role": "system", "content": (
-            "You are an agent performing environment preflight. "
-            "Your ONLY job is to align your container's runtime with the repo's target versions. "
-            "Read the preflight skill, execute it, write /tmp/environment.json, and stop. "
-            "Do not commit this file. Do not do anything else."
-        )},
-        {"role": "user", "content": preflight_prompt},
-    ]
+    # Gate: runtime alignment must happen after discovery, before code changes
+    if (os.path.exists(".agent/discovered")
+            and not os.path.exists(GATE_ALIGNMENT)):
+        blockers.append(
+            "BLOCKED: Runtime alignment (Phase 2) is not complete. "
+            "/tmp/environment.json does not exist. Read /osmo/agent/skills/preflight.md "
+            "and align your runtime before doing any other work."
+        )
 
-    for turn in range(1, 21):  # Max 20 turns for preflight
-        sys.stderr.write(f"\n--- Preflight turn {turn} ---\n")
+    return blockers
 
-        try:
-            response = client.chat.completions.create(
-                model=model, messages=messages, tools=TOOLS, max_tokens=16384,
-            )
-        except Exception as e:
-            sys.stderr.write(f"Preflight API error: {e}\n")
-            break
 
-        choice = response.choices[0]
-        message = choice.message
+def _check_completion_gates():
+    """Check gates that block the agent from declaring done. Returns list of BLOCKED messages."""
+    blockers = []
 
-        if message.content:
-            print(message.content, flush=True)
+    # Gate: quality verification must happen before finishing
+    if not os.path.exists(GATE_QUALITY):
+        blockers.append(
+            "BLOCKED: You cannot finish without running quality verification. "
+            "/tmp/quality-verified.json does not exist. Run the repo's quality gates "
+            "(see .agent/discovered/quality-gates.json) and write /tmp/quality-verified.json "
+            "with the results. If you cannot run them, write the file explaining why you are blocked."
+        )
 
-        messages.append(message.model_dump())
-
-        if not message.tool_calls:
-            break
-
-        for tool_call in message.tool_calls:
-            fn = tool_call.function
-            sys.stderr.write(f"Tool: {fn.name}({fn.arguments[:200]})\n")
-            result = execute_tool(fn.name, fn.arguments)
-            sys.stderr.write(
-                f"  -> {result[:100]}...\n" if len(result) > 100 else f"  -> {result}\n"
-            )
-            messages.append({
-                "role": "tool",
-                "tool_call_id": tool_call.id,
-                "content": result,
-            })
-
-        if choice.finish_reason == "stop":
-            break
-
-    # DIF gate: check for the artifact
-    if os.path.exists(PREFLIGHT_ARTIFACT):
-        sys.stderr.write(f"Preflight complete: {PREFLIGHT_ARTIFACT} exists\n")
-        return True
-    else:
-        sys.stderr.write(f"WARNING: Preflight did not produce {PREFLIGHT_ARTIFACT}\n")
-        return False
+    return blockers
 
 
 def run_agent(client, model, prompt, system_prompt=None,
@@ -679,6 +643,12 @@ def run_agent(client, model, prompt, system_prompt=None,
             checkpoint(commit_prefix, client, model)
             last_checkpoint_turn = turn
 
+        # Hard gates: structural enforcement of non-negotiable behaviors.
+        # Each gate checks for an artifact. If missing at the right time,
+        # injects a BLOCKED message every turn until the agent complies.
+        for gate in _check_gates():
+            messages.append({"role": "user", "content": gate})
+
         # API call with exponential backoff (retries forever for transient errors)
         response = None
         attempt = 0
@@ -725,8 +695,14 @@ def run_agent(client, model, prompt, system_prompt=None,
         # Add assistant message to history
         messages.append(message.model_dump())
 
-        # If no tool calls, we're done
+        # If no tool calls, agent wants to finish — check completion gates
         if not message.tool_calls:
+            blockers = _check_completion_gates()
+            if blockers:
+                for b in blockers:
+                    messages.append({"role": "user", "content": b})
+                # Don't break — force the agent to continue
+                continue
             sys.stderr.write(f"\nAgent finished after {turn} turns.\n")
             break
 
@@ -818,11 +794,6 @@ def main():
     sys.stderr.write(f"Tools: {', '.join(t['function']['name'] for t in TOOLS)}\n")
     sys.stderr.write(f"CWD: {os.getcwd()}\n\n")
 
-    # Phase 1: Preflight (separate conversation, must produce artifact)
-    if not os.path.exists(PREFLIGHT_ARTIFACT):
-        run_preflight(client, args.model, args.commit_prefix)
-
-    # Phase 2: Main task
     run_agent(client, args.model, prompt, system_prompt,
               checkpoint_interval=args.checkpoint_interval,
               commit_prefix=args.commit_prefix)
