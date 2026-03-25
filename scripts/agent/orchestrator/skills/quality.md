@@ -16,26 +16,19 @@ During the Discovery phase, you should have identified how this repo validates c
 - Package scripts (from `package.json` scripts section)
 - Makefile targets
 
-**Prefer repo-specific tooling** over generic checks. If the repo has a quality gate script, it was built for this codebase and knows things you don't.
+**Use the repo's tooling, not your own.** If the repo uses a build system for testing, use that build system — do not bypass it with a standalone test runner. The build system manages dependencies, environment, and test configuration. Running tests outside of it produces results that don't match CI. If the repo's tooling doesn't work, that's a problem to fix, not a reason to substitute your own approach.
 
 ## Fallbacks (When Repo Has No Tooling)
 
-| Build System / Language | Quick check | Full check |
-|----------|------------|------------|
-| Bazel | `bazel build //src/...` | `bazel test //src/...` |
-| Python | `python -m py_compile <file>` | `python -m pytest` (if tests exist) |
-| Go | `go vet ./...` | `go test ./...` |
-| TypeScript | `npx tsc --noEmit` | `npm test` (if configured) |
-| Rust | `cargo check` | `cargo test` |
-| Generic | syntax check the changed files | run whatever tests exist |
+See `/osmo/agent/skills/discovery-quality-fallbacks.md` for language/build-system defaults.
 
 ## When to Validate
 
-- After modifying code, before committing: at minimum run the quick check
-- After pulling a child's changes: verify the combined state is healthy
-- Before declaring the entire task done: run the full check
+- After modifying code, before committing: run the quick check
+- After pulling a child's changes: run the full check on the combined state
+- Before declaring the entire task done: run the full check. No exceptions.
 
-Use your judgment on frequency. But before declaring done: run the full check. No exceptions.
+"I'll validate later" is not acceptable. Validate as you go. The longer you wait, the harder it is to find what broke.
 
 ## When You Can't Run Validation
 
@@ -45,7 +38,7 @@ If a tool is blocked, unavailable, or broken:
 3. List what commands need to be run manually.
 4. Exit with a non-zero status so the orchestrator knows you're not finished.
 
-An agent that changes 70 files and says "done" without running tests is worse than an agent that changes 70 files and says "blocked — couldn't run tests." The first creates false confidence. The second is honest.
+An agent that changes files and says "done" without running tests is worse than one that says "blocked — couldn't run tests." The first creates false confidence. The second is honest.
 
 ## When Validation Fails
 

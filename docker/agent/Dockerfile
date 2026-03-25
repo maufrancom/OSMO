@@ -3,32 +3,33 @@
 
 # OSMO Agent Image
 #
-# Runs the agent harness (Python SDK) to call Claude via NVIDIA inference API.
-# No Claude Code CLI. No permission system. Direct API calls with tool execution.
+# General-purpose agent environment. Ships with common build tools and package
+# managers. The agent discovers what the repo needs and installs/configures
+# the correct runtime (Python version, Go version, etc.) as part of its
+# discovery phase.
 #
 # Build (from repo root):
 #   docker build -t osmo-agent:latest -f docker/agent/Dockerfile .
-#
-# Test locally:
-#   python3 /osmo/agent/agent-harness.py --model azure/anthropic/claude-sonnet-4-6 --prompt "hello"
 
 FROM ubuntu:24.04
 
 ENV DEBIAN_FRONTEND=noninteractive
 
-# System tools
+# System tools + build essentials + deadsnakes PPA (for any Python version)
 RUN apt-get update -qq && \
     apt-get install -y -qq --no-install-recommends \
       git \
       jq \
       curl \
-      python3 \
-      python3-pip \
-      python3-yaml \
       ca-certificates \
       openssh-client \
       build-essential \
+      software-properties-common \
+      sudo \
+      python3 \
+      python3-pip \
       python3-dev \
+    && add-apt-repository -y ppa:deadsnakes/ppa \
     && rm -rf /var/lib/apt/lists/*
 
 # GitHub CLI
@@ -40,16 +41,17 @@ RUN curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg \
     apt-get install -y -qq --no-install-recommends gh && \
     rm -rf /var/lib/apt/lists/*
 
-# Bazel 8.1.1 (matches .bazelversion in OSMO repo — for running tests)
+# Bazel 8.1.1
 RUN curl -fsSL "https://github.com/bazelbuild/bazel/releases/download/8.1.1/bazel-8.1.1-linux-x86_64" \
       -o /usr/local/bin/bazel && \
     chmod +x /usr/local/bin/bazel
 
-# Python tools: openai SDK (agent harness), ruff (linter), pip-tools (dependency management)
+# Python tools for the harness itself (runs on system python3)
 RUN pip3 install --break-system-packages openai ruff pip-tools
 
-# Non-root user
+# Non-root user with passwordless sudo (needs root for runtime package installs)
 RUN useradd -m -s /bin/bash agent && \
+    echo "agent ALL=(ALL) NOPASSWD:ALL" > /etc/sudoers.d/agent && \
     mkdir -p /workspace && \
     chown -R agent:agent /workspace
 

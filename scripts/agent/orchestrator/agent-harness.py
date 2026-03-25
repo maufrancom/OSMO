@@ -443,6 +443,79 @@ def checkpoint(commit_prefix="agent", client=None, model=None):
 TOKEN_COMPACT_THRESHOLD = 40_000
 MESSAGE_COMPACT_THRESHOLD = 100
 
+PREFLIGHT_ARTIFACT = "/tmp/environment.json"
+
+
+def run_preflight(client, model, commit_prefix="agent"):
+    """Run preflight as a separate, focused agent conversation.
+
+    The agent must produce environment.json before the main task starts.
+    This is a DIF gate — the harness checks for the artifact, not the LLM.
+    """
+    preflight_prompt = (
+        "Read /osmo/agent/skills/preflight.md and execute every step. "
+        "You must produce /tmp/environment.json before you are done. "
+        "Do not commit this file — it is a runtime artifact. "
+        "Do nothing else — no discovery, no code changes, no planning. Only preflight."
+    )
+
+    sys.stderr.write("\n=== Preflight phase ===\n")
+    messages = [
+        {"role": "system", "content": (
+            "You are an agent performing environment preflight. "
+            "Your ONLY job is to align your container's runtime with the repo's target versions. "
+            "Read the preflight skill, execute it, write environment.json, commit, and stop. "
+            "Do not do anything else."
+        )},
+        {"role": "user", "content": preflight_prompt},
+    ]
+
+    for turn in range(1, 21):  # Max 20 turns for preflight
+        sys.stderr.write(f"\n--- Preflight turn {turn} ---\n")
+
+        try:
+            response = client.chat.completions.create(
+                model=model, messages=messages, tools=TOOLS, max_tokens=16384,
+            )
+        except Exception as e:
+            sys.stderr.write(f"Preflight API error: {e}\n")
+            break
+
+        choice = response.choices[0]
+        message = choice.message
+
+        if message.content:
+            print(message.content, flush=True)
+
+        messages.append(message.model_dump())
+
+        if not message.tool_calls:
+            break
+
+        for tool_call in message.tool_calls:
+            fn = tool_call.function
+            sys.stderr.write(f"Tool: {fn.name}({fn.arguments[:200]})\n")
+            result = execute_tool(fn.name, fn.arguments)
+            sys.stderr.write(
+                f"  -> {result[:100]}...\n" if len(result) > 100 else f"  -> {result}\n"
+            )
+            messages.append({
+                "role": "tool",
+                "tool_call_id": tool_call.id,
+                "content": result,
+            })
+
+        if choice.finish_reason == "stop":
+            break
+
+    # DIF gate: check for the artifact
+    if os.path.exists(PREFLIGHT_ARTIFACT):
+        sys.stderr.write(f"Preflight complete: {PREFLIGHT_ARTIFACT} exists\n")
+        return True
+    else:
+        sys.stderr.write(f"WARNING: Preflight did not produce {PREFLIGHT_ARTIFACT}\n")
+        return False
+
 
 def run_agent(client, model, prompt, system_prompt=None,
               checkpoint_interval=10, commit_prefix="agent"):
@@ -624,6 +697,11 @@ def main():
     sys.stderr.write(f"Tools: {', '.join(t['function']['name'] for t in TOOLS)}\n")
     sys.stderr.write(f"CWD: {os.getcwd()}\n\n")
 
+    # Phase 1: Preflight (separate conversation, must produce artifact)
+    if not os.path.exists(PREFLIGHT_ARTIFACT):
+        run_preflight(client, args.model, args.commit_prefix)
+
+    # Phase 2: Main task
     run_agent(client, args.model, prompt, system_prompt,
               checkpoint_interval=args.checkpoint_interval,
               commit_prefix=args.commit_prefix)

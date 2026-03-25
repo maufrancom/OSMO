@@ -13,7 +13,7 @@ You submit a child workflow using the same image and prompt as yourself. The onl
 
 ```bash
 # Submit a child for subtask st-004
-/osmo/agent/tools/submit-child.sh "st-004" "utils-connectors"
+/osmo/agent/tools/submit-child.sh "st-004" "module-name"
 # Returns a workflow ID
 
 # Wait for it

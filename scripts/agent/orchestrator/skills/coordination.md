@@ -38,7 +38,7 @@ During planning, multiple children can run simultaneously. Each writes to its ow
 
 ## Why Code Changes Must Be Sequential
 
-Code files ARE interdependent. Two agents editing different Python files can still break each other (shared imports, test dependencies). The only safe approach: one agent modifies code at a time, validates, then the next agent starts from the validated state.
+Code files ARE interdependent. Two agents editing different files can still break each other (shared imports, test dependencies). The only safe approach: one agent modifies code at a time, validates, then the next agent starts from the validated state.
 
 ## Reading Full State
 

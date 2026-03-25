@@ -24,9 +24,9 @@ Write one episode file per session. Captures what happened — the narrative.
 
 Append to shared knowledge files. Captures patterns — the lessons.
 
-- Repo-specific pitfalls ("module X has circular imports — extract to base.py")
-- Effective commands ("bazel test //src/utils/... runs in 30s, full suite takes 8min")
-- Migration/transformation patterns ("models with extra fields need ConfigDict(extra='allow')")
+- Repo-specific pitfalls (e.g., circular imports, hidden dependencies)
+- Effective commands (e.g., fast test targets, useful flags)
+- Transformation patterns that apply to recurring work
 - Dependencies between modules that aren't obvious from imports
 - Things the knowledge doc or discovery didn't cover
 
@@ -49,20 +49,19 @@ Append to shared knowledge files. Captures patterns — the lessons.
   "subtask": null,
   "duration_minutes": 12,
   "outcome": "completed",
-  "summary": "Migrated 72 Python files from Pydantic v1 to v2",
+  "summary": "Completed task X across N files",
   "actions": [
-    "Read CLAUDE.md and migration guides",
-    "Ran bump-pydantic as baseline — fixed 60% of patterns",
-    "Manually fixed remaining validators, Config classes, and .dict() calls",
-    "Hit circular import in service/core/workflow — extracted shared models to base.py"
+    "Read repo instructions and relevant documentation",
+    "Ran automated tooling as baseline",
+    "Manually fixed remaining issues"
   ],
   "errors": [
-    {"file": "src/utils/connectors/postgres.py", "error": "ValidationError: extra fields not permitted", "fix": "Added ConfigDict(extra='allow')"}
+    {"file": "path/to/file.py", "error": "description of error", "fix": "what resolved it"}
   ],
   "learned": [
-    "bump-pydantic misses validator mode= parameter",
-    "Models receiving K8s configs need extra='allow'",
-    "service/core/workflow has circular imports between objects.py and submit.py"
+    "Non-obvious finding about the codebase",
+    "Effective approach that should be reused",
+    "Pitfall to avoid in future sessions"
   ]
 }
 ```
@@ -72,9 +71,8 @@ Append to shared knowledge files. Captures patterns — the lessons.
 ```json
 {
   "patterns": [
-    {"category": "pydantic", "lesson": "Models receiving dynamic configs (K8s, env vars) need ConfigDict(extra='allow')", "source": "session-2026-03-24T14:30:00Z"},
-    {"category": "architecture", "lesson": "service/core/workflow has circular imports — extract shared models to base.py", "source": "session-2026-03-24T14:30:00Z"},
-    {"category": "tooling", "lesson": "bump-pydantic handles 60% of v1→v2 patterns but misses validator mode= and root_validator→model_validator", "source": "session-2026-03-24T14:30:00Z"}
+    {"category": "architecture", "lesson": "Description of a structural pattern or pitfall", "source": "session-<timestamp>"},
+    {"category": "tooling", "lesson": "Effective command or tool usage discovered", "source": "session-<timestamp>"}
   ]
 }
 ```

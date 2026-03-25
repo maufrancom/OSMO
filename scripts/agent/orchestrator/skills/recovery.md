@@ -49,9 +49,11 @@ git log --oneline -20
 
 3. **Check for human answers**: Run `/osmo/agent/tools/check-answers.sh`. If answers arrived, write decision files and unblock affected subtasks.
 
-4. **Verify current state**: Use the quality gates from `.agent/discovered/quality-gates.json` to confirm the codebase is healthy.
+4. **Validate prior runtime environment**: Read `/tmp/environment.json` to see what runtime the harness just set up. Compare against episodic memory from prior sessions. If the prior session ran against a different runtime, every artifact it produced is suspect — determine what's affected and whether it needs to be redone.
 
-5. **Continue from where it stopped**: Find the next subtask that's pending and whose dependencies are met. Pick up from there.
+5. **Verify current state**: Use the quality gates from `.agent/discovered/quality-gates.json` to confirm the codebase is healthy.
+
+6. **Continue from where it stopped**: Find the next subtask that's pending and whose dependencies are met. Pick up from there.
 
 ## Rules
 

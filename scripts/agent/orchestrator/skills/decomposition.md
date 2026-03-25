@@ -15,7 +15,7 @@ Decompose when you can't hold all the context in your head, or when the scope sp
 
 **By module boundary**: One service, one library, one package. These are natural units with internal cohesion.
 
-**By dependency layer**: Shared libraries before consumers. If `lib/utils` changes, everything that imports from it needs to come after.
+**By dependency layer**: Shared libraries before consumers. If a shared module changes, everything that depends on it needs to come after.
 
 **By logical grouping**: Sometimes files that span directories belong together — a data model and all its serializers, for example.
 
