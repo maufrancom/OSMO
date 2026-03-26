@@ -179,11 +179,9 @@ class BackendWorkerConfig(BackendBaseConfig, metrics.MetricsCreatorConfig):
 class TestRunnerConfig(BackendBaseConfig):
     """Configuration for resource tests."""
     test_name: str = pydantic.Field(
-        required=True,
         description='Name of the test to run',
         json_schema_extra={'command_line': 'backend_test_name', 'env': 'BACKEND_TEST_NAME'})
     namespace: str = pydantic.Field(
-        required=True,
         description='Kubernetes namespace to run test in',
         json_schema_extra={'command_line': 'namespace', 'env': 'NAMESPACE'})
     node_condition_prefix: str = pydantic.Field(
