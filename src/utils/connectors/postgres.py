@@ -181,11 +181,11 @@ class PostgresConfig(pydantic.BaseModel):
     postgres_pool_minconn: int = pydantic.Field(
         default=1,
         description='Minimum number of connections to keep in the connection pool',
-        json_schema_extra={'command_line': 'postgres_pool_minconn', 'env': 'OSMO_POSTGRES_POOL_MINCONN', 'type': validation.positive_integer})
+        json_schema_extra={'command_line': 'postgres_pool_minconn', 'env': 'OSMO_POSTGRES_POOL_MINCONN'})
     postgres_pool_maxconn: int = pydantic.Field(
         default=10,
         description='Maximum number of connections allowed in the connection pool',
-        json_schema_extra={'command_line': 'postgres_pool_maxconn', 'env': 'OSMO_POSTGRES_POOL_MAXCONN', 'type': validation.positive_integer})
+        json_schema_extra={'command_line': 'postgres_pool_maxconn', 'env': 'OSMO_POSTGRES_POOL_MAXCONN'})
     schema_version: str = pydantic.Field(
         default='public',
         description='pgroll schema version to use. '
