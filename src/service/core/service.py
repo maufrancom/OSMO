@@ -196,7 +196,7 @@ def get_workflow_plugins_configs() -> Dict:
     """Get all the workflow plugins configurations"""
     context = objects.WorkflowServiceContext.get()
     workflow_configs = context.database.get_workflow_configs()
-    return workflow_configs.plugins_config.dict(by_alias=True)
+    return workflow_configs.plugins_config.model_dump(by_alias=True)
 
 
 app.include_router(misc_router)

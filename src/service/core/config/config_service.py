@@ -58,7 +58,7 @@ def _check_config_name(name: str, name_type: ConfigNameType):
 def read_service_configs() -> Dict:
     """Read all the service configurations"""
     postgres = connectors.PostgresConnector.get_instance()
-    return postgres.get_service_configs().dict(by_alias=True)
+    return postgres.get_service_configs().model_dump(by_alias=True)
 
 
 @router.put('/api/configs/service')
@@ -84,7 +84,7 @@ def patch_service_configs(
 def read_workflow_configs() -> Dict:
     """Read all the workflow configurations"""
     postgres = connectors.PostgresConnector.get_instance()
-    return postgres.get_workflow_configs().dict(by_alias=True)
+    return postgres.get_workflow_configs().model_dump(by_alias=True)
 
 
 @router.put('/api/configs/workflow')
@@ -109,7 +109,7 @@ def patch_workflow_configs(
 def read_dataset_configs() -> Dict:
     """Read all the dataset configurations"""
     postgres = connectors.PostgresConnector.get_instance()
-    return postgres.get_dataset_configs().dict(by_alias=True)
+    return postgres.get_dataset_configs().model_dump(by_alias=True)
 
 
 @router.put('/api/configs/dataset')
