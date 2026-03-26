@@ -133,7 +133,7 @@ class FrontendJob(Job):
         job into the job queue.
         """
         redis_client = connectors.RedisConnector.get_instance().client
-        serialized_job = self.json()
+        serialized_job = self.model_dump_json()
         timeout_time = time.time() + delay_duration.total_seconds()
         redis_client.zadd(DELAYED_JOB_QUEUE, {serialized_job: timeout_time})
         self.log_delayed_submission(delay_duration)
