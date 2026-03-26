@@ -20,6 +20,7 @@
 # pip-compile ./requirements.txt -o locked_requirements.txt --allow-unsafe -v --generate-hashes
 
 pydantic==2.12.5
+pydantic-settings==2.9.1
 
 # For job queue
 kombu==5.2.4
