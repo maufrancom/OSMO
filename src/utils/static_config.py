@@ -44,12 +44,13 @@ class StaticConfig(pydantic.BaseModel):
                                  'file, the value in the last file is used.')
 
         for name, field in cls.model_fields.items():
-            if 'command_line' in field.field_info.extra:
-                help_message = field.field_info.description
+            extra = field.json_schema_extra or {}
+            if 'command_line' in extra:
+                help_message = field.description
                 if field.default is not None:
                     help_message += f' (default: {str(field.default)})'
-                parser.add_argument(f'--{field.field_info.extra["command_line"]}',
-                                    action=field.field_info.extra.get('action', 'store'),
+                parser.add_argument(f'--{extra["command_line"]}',
+                                    action=extra.get('action', 'store'),
                                     help=help_message)
         args = parser.parse_args()
 
@@ -58,7 +59,7 @@ class StaticConfig(pydantic.BaseModel):
         for name, field in cls.model_fields.items():
             # If the default is None and its not optional, then dont set the default because the
             # user must provide this value
-            if not field.required:
+            if not field.is_required():
                 config[name] = field.default
 
         # Load any config files. The later files override anything from the earlier files
@@ -77,9 +78,10 @@ class StaticConfig(pydantic.BaseModel):
         # 3. Config file
         # 4. Default
         for name, field in cls.model_fields.items():
-            env_name = field.field_info.extra.get('env')
-            arg_name = field.field_info.extra.get('command_line')
-            is_list = typing.get_origin(field.outer_type_) is list
+            extra = field.json_schema_extra or {}
+            env_name = extra.get('env')
+            arg_name = extra.get('command_line')
+            is_list = typing.get_origin(field.annotation) is list
             # Do we have an environment variable? If so, use that
             if env_name is not None and env_name in os.environ:
                 if is_list:
@@ -98,18 +100,20 @@ class StaticConfig(pydantic.BaseModel):
         except pydantic.ValidationError as error:
             # Parse through errors and print them in a more user friendly manner
             for type_error in error.errors():
-                if type_error['type'] not in ('type_error.none.not_allowed', 'value_error.missing'):
+                if type_error['type'] != 'missing':
                     print(type_error)
                 else:
-                    field = cls.model_fields[str(type_error['loc'][0])]  # pylint: disable=E1136
-                    print(f'ERROR: No value provided for config {field.name} ' \
+                    field_name = str(type_error['loc'][0])
+                    field = cls.model_fields[field_name]  # pylint: disable=E1136
+                    print(f'ERROR: No value provided for config {field_name} ' \
                           'via any of the following methods:')
-                    print(f'- Config file key: {field.name}')
-                    if 'command_line' in field.field_info.extra:
-                        command_line = field.field_info.extra['command_line']
+                    print(f'- Config file key: {field_name}')
+                    extra = field.json_schema_extra or {}
+                    if 'command_line' in extra:
+                        command_line = extra['command_line']
                         print(f'- Command line argument: --{command_line}')
-                    if 'env' in field.field_info.extra:
-                        env = field.field_info.extra['env']
+                    if 'env' in extra:
+                        env = extra['env']
                         print(f'- Environment variable: {env}')
             sys.exit(1)
         return cls._instance
