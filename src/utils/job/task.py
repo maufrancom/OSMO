@@ -1036,8 +1036,7 @@ class Task(pydantic.BaseModel):
     pod_ip: str | None
     lead: bool
 
-    class Config:
-        arbitrary_types_allowed = True
+    model_config = pydantic.ConfigDict(arbitrary_types_allowed=True)
 
     @staticmethod
     def batch_insert_to_db(
@@ -1505,9 +1504,7 @@ class TaskGroup(pydantic.BaseModel):
     # Used by cleanup to avoid dependency on the current pool config.
     group_template_resource_types: List[Dict[str, Any]] = []
 
-    class Config:
-        arbitrary_types_allowed = True
-        extra = 'forbid'
+    model_config = pydantic.ConfigDict(arbitrary_types_allowed=True, extra='forbid')
 
     def insert_to_db(self, status: TaskGroupStatus = TaskGroupStatus.SUBMITTING,
                      failure_message: str | None = None):
