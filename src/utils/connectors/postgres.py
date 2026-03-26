@@ -1774,7 +1774,7 @@ class ExtraArgBaseModel(pydantic.BaseModel):
         result = []
         for subclass in cls.__subclasses__():
             result.append(subclass)
-            result.extend(subclass._collect_subclasses())
+            result.extend(subclass._collect_subclasses())  # pylint: disable=protected-access
         return result
 
 
