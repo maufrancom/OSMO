@@ -286,7 +286,10 @@ class WorkflowSpec(pydantic.BaseModel, extra='forbid'):
         for group_spec in values.get('groups', []):
             g_name = group_spec['name'] if isinstance(group_spec, dict) else group_spec.name
             _validate_name(g_name)
-            g_tasks = group_spec.get('tasks', []) if isinstance(group_spec, dict) else group_spec.tasks
+            if isinstance(group_spec, dict):
+                g_tasks = group_spec.get('tasks', [])
+            else:
+                g_tasks = group_spec.tasks
             for task_spec in g_tasks:
                 spec_name = task_spec['name'] if isinstance(task_spec, dict) else task_spec.name
                 _validate_name(spec_name)

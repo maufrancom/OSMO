@@ -846,8 +846,9 @@ class UpdateGroup(WorkflowJob):
             # Need to check status here because the status could have changed due to fetch_status
             if group_obj.status == task.TaskGroupStatus.PROCESSING:
                 delayed_job = copy.deepcopy(self)
+                job_id = UpdateGroup._get_job_id(delayed_job.model_dump())
                 delayed_job.job_id = \
-                    f'{common.generate_unique_id(5)}-{UpdateGroup._get_job_id(delayed_job.model_dump())}'
+                    f'{common.generate_unique_id(5)}-{job_id}'
                 delayed_job.send_delayed_job_to_queue(
                     datetime.timedelta(minutes=1))
 
@@ -1346,7 +1347,10 @@ class CleanupWorkflow(WorkflowJob):
             logs = connectors.redis.LogStreamBody(
                 time=common.current_time(), io_type=connectors.redis.IOType.DUMP,
                 source='OSMO', retry_id=0, text=log_message)
-            redis_batch_pipeline.xadd(f'{self.workflow_id}-logs', json.loads(logs.model_dump_json()))
+            redis_batch_pipeline.xadd(
+                f'{self.workflow_id}-logs',
+                json.loads(logs.model_dump_json()),
+            )
 
         logs = connectors.redis.LogStreamBody(
             time=common.current_time(), io_type=connectors.redis.IOType.END_FLAG,

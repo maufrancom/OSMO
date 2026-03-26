@@ -91,7 +91,7 @@ class ExecutorParameters(pydantic_settings.BaseSettings):
         settings_cls,
         init_settings,
         env_settings,
-        dotenv_settings,
+        dotenv_settings,  # pylint: disable=unused-argument
         file_secret_settings,
     ):
         return (
