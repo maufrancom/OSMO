@@ -800,7 +800,7 @@ pydantic==2.12.5 \
     --hash=sha256:4d351024c75c0f085a9febbb665ce8c0c6ec5d30e903bdb6394b7ede26aebb49 \
     --hash=sha256:e561593fccf61e8a20fc46dfc2dfe075b8be7d0188df33f221ad1f0139180f9d
     # via
-    #   -r src/requirements.txt
+    #   -r requirements.txt
     #   fastapi
     #   pydantic-settings
 pydantic-core==2.41.5 \
@@ -929,7 +929,7 @@ pydantic-core==2.41.5 \
 pydantic-settings==2.9.1 \
     --hash=sha256:59b4f431b1defb26fe620c71a7d3968a710d719f5f4cdbbdb7926edeb770f6ef \
     --hash=sha256:c509bf79d27563add44e8446233359004ed85066cd096d8b510f715e6ef5d268
-    # via -r src/requirements.txt
+    # via -r requirements.txt
 pyinstaller==6.19.0 \
     --hash=sha256:1ec54ef967996ca61dacba676227e2b23219878ccce5ee9d6f3aada7b8ed8abf \
     --hash=sha256:3c5c251054fe4cfaa04c34a363dcfbf811545438cb7198304cd444756bc2edd2 \
