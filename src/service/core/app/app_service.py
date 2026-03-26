@@ -114,10 +114,8 @@ def create_app(name: objects.AppNamePattern,
     app_info = app.App.insert_into_db(postgres, name, username, description)
     upload_app = jobs.UploadApp(
         app_uuid=app_info.uuid,
-        app_name=app_info.name,
         app_version=1,
-        app_content=app_content,
-        user=username)
+        app_content=app_content)
     upload_app.send_job_to_queue()
 
 
