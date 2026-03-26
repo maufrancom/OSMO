@@ -1071,13 +1071,7 @@ s3transfer==0.12.0 \
     --hash=sha256:35b314d7d82865756edab59f7baebc6b477189e6ab4c53050e28c1de4d9cce18 \
     --hash=sha256:8ac58bc1989a3fdb7c7f3ee0918a66b160d038a147c7b5db1500930a607e9a1c
     # via boto3
-setuptools==82.0.0 \
-    --hash=sha256:22e0a2d69474c6ae4feb01951cb69d515ed23728cf96d05513d36e42b62b37cb \
-    --hash=sha256:70b18734b607bd1da571d097d236cfcfacaf01de45717d59e6e04b96877532e0
-    # via
-    #   kubernetes
-    #   pyinstaller
-    #   pyinstaller-hooks-contrib
+
 
 shtab==1.6.4 \
     --hash=sha256:4be38887a912091a1640e06f5ccbcbd24e176cf2fcb9ef0c2e011ee22d63834f \
@@ -1513,3 +1507,10 @@ zipp==3.23.0 \
     # via importlib-metadata
 
 # The following packages are considered to be unsafe in a requirements file:
+setuptools==82.0.0 \
+    --hash=sha256:22e0a2d69474c6ae4feb01951cb69d515ed23728cf96d05513d36e42b62b37cb \
+    --hash=sha256:70b18734b607bd1da571d097d236cfcfacaf01de45717d59e6e04b96877532e0
+    # via
+    #   kubernetes
+    #   pyinstaller
+    #   pyinstaller-hooks-contrib
