@@ -255,7 +255,7 @@ class WebsocketWorker(kombu.mixins.ConsumerMixin):
                     job=job,
                     start_time=time.time())
 
-            compressed = zlib.compress(job.json().encode('utf-8'))
+            compressed = zlib.compress(job.model_dump_json().encode('utf-8'))
             await self.websocket.send_bytes(compressed)
 
 

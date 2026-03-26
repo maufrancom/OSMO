@@ -109,7 +109,7 @@ def create_backend(postgres: connectors.PostgresConnector,
         insert_cmd,
         (name, message.k8s_uid, message.k8s_namespace, '',
          '',
-         connectors.BackendSchedulerSettings().json(),
+         connectors.BackendSchedulerSettings().model_dump_json(),
          common.current_time(), common.current_time(), '', router_address,
          message.version))
     if k8s_info[0].k8s_uid != message.k8s_uid:
@@ -656,7 +656,7 @@ async def backend_listener_impl(websocket: fastapi.WebSocket, name: str):
                     ) from db_err
             finally:
                 if ack_message:
-                    await websocket.send_text(ack_message.json())
+                    await websocket.send_text(ack_message.model_dump_json())
 
     except fastapi.WebSocketDisconnect as err:  # The websocket is closed by client
         logging.info(
@@ -689,7 +689,7 @@ async def backend_listener_control_impl(websocket: fastapi.WebSocket, name: str)
                 rules=node_conditions.get('rules', {})
             )
         )
-        await websocket.send_text(message.json())
+        await websocket.send_text(message.model_dump_json())
         logging.info('Sent node conditions to backend %s', name)
 
         async with redis.asyncio.from_url(config.redis_url) as redis_client:
@@ -709,7 +709,7 @@ async def backend_listener_control_impl(websocket: fastapi.WebSocket, name: str)
                             body=backend_messages.NodeConditionsBody(
                                 rules=json_fields.get('rules', {})
                             ))
-                        await websocket.send_text(message.json())
+                        await websocket.send_text(message.model_dump_json())
                 except (ConnectionError,
                         asyncio.exceptions.TimeoutError) as conn_error:
                     # Handle connection/timeout errors
