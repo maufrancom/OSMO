@@ -256,7 +256,12 @@ class TestConfigHistoryQueryParams(unittest.TestCase):
         with self.assertRaises(ValueError) as context:
             objects.ConfigHistoryQueryParams(config_types=['invalid_type'])
         self.assertIn('config_types', str(context.exception))
-        self.assertIn('not a valid enumeration member', str(context.exception))
+        # Pydantic v2 uses "Input should be ..." instead of v1's "not a valid enumeration member"
+        error_str = str(context.exception)
+        self.assertTrue(
+            'not a valid enumeration member' in error_str or 'Input should be' in error_str,
+            f"Expected enum validation error, got: {error_str}"
+        )
 
     def test_at_timestamp_with_created_before(self):
         """Test validation of at_timestamp with created_before."""

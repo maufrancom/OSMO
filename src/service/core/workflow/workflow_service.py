@@ -258,12 +258,12 @@ def calculate_pool_quotas(
             sum_quota_free += quota_free
 
             resource_usage = objects.ResourceUsage(
-                quota_used=quota_used,
-                quota_free=quota_free,
-                quota_limit=quota_limit,
-                total_usage=total_usage,
-                total_capacity=total_capacity,
-                total_free=total_free
+                quota_used=str(quota_used),
+                quota_free=str(quota_free),
+                quota_limit=str(quota_limit),
+                total_usage=str(total_usage),
+                total_capacity=str(total_capacity),
+                total_free=str(total_free)
             )
 
             node_set_response.pools.append(objects.PoolResourceUsage(
