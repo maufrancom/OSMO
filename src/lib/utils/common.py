@@ -169,7 +169,7 @@ TAB = '  '
 def pydantic_encoder(obj):
     ''' Allows pydantic objects to be used for json.dumps '''
     if isinstance(obj, pydantic.BaseModel):
-        return obj.dict()
+        return obj.model_dump()
     elif isinstance(obj, enum.Enum):
         return obj.value
     raise TypeError(f'Object of type {obj.__class__.__name__} is not JSON serializable')

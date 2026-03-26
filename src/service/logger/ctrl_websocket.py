@@ -40,14 +40,14 @@ class MetricsOptions(pydantic.BaseModel):
     task_io_metrics: Optional[task_io.TaskIOMetrics] = pydantic.Field(
         description='Metrics for task io')
 
-    @pydantic.root_validator(pre=True)
+    @pydantic.model_validator(mode='before')
     def validate(cls, values):  # pylint: disable=no-self-argument
         """ A valid metric can only be one of the two types """
         num_fields_set = sum(1 for value in values.values()
                              if value is not None)
         if num_fields_set != 1:
             raise osmo_errors.OSMOUserError(
-                f'Exactly one of the following must be set {cls.__fields__.keys()}')
+                f'Exactly one of the following must be set {cls.model_fields.keys()}')
         return values
 
 
@@ -194,7 +194,7 @@ async def run_websocket(websocket: fastapi.WebSocket, name: str, task_name: str,
                                 time=loaded_json['time'],
                                 text=loaded_json['text'],
                                 io_type=loaded_json['iotype'])
-                            # Use logs.json() instead of logs.dict() to convert enum and datetime to
+                            # Use logs.json() instead of logs.model_dump() to convert enum and datetime to
                             # strings
                             await redis_client.xadd(f'{workflow_obj.workflow_id}-logs',
                                                     json.loads(logs.json()),

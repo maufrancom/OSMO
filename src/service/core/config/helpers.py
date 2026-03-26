@@ -317,7 +317,7 @@ def update_backend(
         logging.warning('Failed to get previous backend %s: %s', name, e)
         old_backend = None
     _update_backend_helper(postgres, configs_objects.BackendConfigWithName(
-        **request.configs.dict(), name=name))
+        **request.configs.model_dump(), name=name))
 
     create_backend_config_history_entry(
         postgres, name, username, request.description or f"Updated backend \'{name}\'", request.tags

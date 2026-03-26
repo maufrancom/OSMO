@@ -97,7 +97,7 @@ class WorkflowServiceConfig(connectors.RedisConfig, connectors.PostgresConfig,
         description='The password (access token value) for the default admin user. '
                     'Must be set if default_admin_username is set.')
 
-    @pydantic.root_validator()
+    @pydantic.model_validator(mode='before')
     @classmethod
     def validate_default_admin(cls, values):
         """
@@ -168,7 +168,7 @@ class SubmitResponse(pydantic.BaseModel, extra='forbid'):
     dashboard_url: Optional[str]
 
     @classmethod
-    @pydantic.root_validator
+    @pydantic.model_validator(mode='before')
     def logs_or_spec(cls, values):
         if (values['logs'] is not None, values['spec'] is not None).count(True) != 1:
             raise ValueError('Exactly one of "logs" or "spec" must be set')
@@ -211,7 +211,7 @@ class ListEntry(pydantic.BaseModel, extra='forbid'):
         overview = f'{base_url}/workflows/{row["workflow_id"]}'
         if config.method == 'dev':
             overview = f'{base_url}/api/workflow/{row["workflow_id"]}'
-        return ListEntry.construct(
+        return ListEntry.model_construct(
             user=row['submitted_by'], name=row['workflow_id'],
             workflow_uuid=row['workflow_uuid'],
             submit_time=row['submit_time'],
@@ -243,7 +243,7 @@ class ListResponse(pydantic.BaseModel, extra='forbid'):
     def from_db_rows(cls, rows: Any, base_url: str, more_entries: bool) -> 'ListResponse':
         backend_lookup: Dict = {}
         workflows = [ListEntry.from_db_row(row, base_url, backend_lookup) for row in rows]
-        return ListResponse.construct(workflows=workflows, more_entries=more_entries)
+        return ListResponse.model_construct(workflows=workflows, more_entries=more_entries)
 
 
 class ListTaskSummaryEntry(pydantic.BaseModel, extra='forbid'):
@@ -275,9 +275,9 @@ class ListTaskAggregatedEntry(ListTaskSummaryEntry, extra='forbid'):
 
     @classmethod
     def from_db_row(cls, row: Any) -> 'ListTaskAggregatedEntry':
-        return ListTaskAggregatedEntry.construct(
+        return ListTaskAggregatedEntry.model_construct(
             workflow_id=row['workflow_id'],
-            **ListTaskSummaryEntry.from_db_row(row).dict()
+            **ListTaskSummaryEntry.from_db_row(row).model_dump()
             )
 
 class ListTaskSummaryResponse(pydantic.BaseModel, extra='forbid'):
@@ -730,14 +730,14 @@ class CredentialOptions(pydantic.BaseModel):
     generic_credential: Optional[UserCredential] = pydantic.Field(
         description='Generic authentication information')
 
-    @pydantic.root_validator(pre=True)
+    @pydantic.model_validator(mode='before')
     def validate_credential(cls, values):  # pylint: disable=no-self-argument
         """ A valid credential can only be one of the three types """
         num_fields_set = sum(1 for value in values.values()
                              if value is not None)
         if num_fields_set != 1:
             raise osmo_errors.OSMOUserError(
-                f'Exactly one of the following must be set {cls.__fields__.keys()}')
+                f'Exactly one of the following must be set {cls.model_fields.keys()}')
         return values
 
     def get_credential(self) -> CredentialProtocol:
@@ -749,7 +749,7 @@ class CredentialOptions(pydantic.BaseModel):
             return self.generic_credential
         else:
             raise osmo_errors.OSMOUserError(
-                f'Exactly one of the following must be set: {self.__fields__.keys()}')
+                f'Exactly one of the following must be set: {self.model_fields.keys()}')
 
 
 class CredentialGetResponse(pydantic.BaseModel):

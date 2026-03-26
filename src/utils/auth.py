@@ -44,7 +44,7 @@ class AsymmetricKeyPair(pydantic.BaseModel):
     def generate(cls) -> 'AsymmetricKeyPair':
         return AsymmetricKeyPair()  # type: ignore
 
-    @pydantic.root_validator()
+    @pydantic.model_validator(mode='before')
     @classmethod
     def validate_valid_key(cls, values):
 
@@ -98,7 +98,7 @@ class AuthenticationConfig(pydantic.BaseModel):
     # The maximum duration of a token
     max_token_duration: str = '365d'
 
-    @pydantic.validator('max_token_duration')
+    @pydantic.field_validator('max_token_duration')
     @classmethod
     def validate_max_token_duration(cls, value: str) -> str:
         try:
@@ -121,7 +121,7 @@ class AuthenticationConfig(pydantic.BaseModel):
             issuer=issuer,
             audience=issuer)
 
-    @pydantic.root_validator()
+    @pydantic.model_validator(mode='before')
     @classmethod
     def validate_active_key(cls, values):
         active_key = values.get('active_key')

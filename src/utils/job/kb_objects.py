@@ -624,7 +624,7 @@ class FileMount(pydantic.BaseModel):
         arbitrary_types_allowed = True
         extra = 'forbid'
 
-    @pydantic.root_validator(pre=True)
+    @pydantic.model_validator(mode='before')
     @classmethod
     def digest_validator(cls, values):
         """By default, build the digest from the content and path"""

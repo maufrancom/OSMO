@@ -130,7 +130,7 @@ class ExecutorParameters(pydantic.BaseSettings):
         description='The size of the log queue for the executor. Only used for multi-process jobs.',
     )
 
-    @pydantic.validator(
+    @pydantic.field_validator(
         'num_threads_inflight_multiplier',
         'chunk_queue_size_multiplier',
     )

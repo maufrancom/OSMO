@@ -43,7 +43,7 @@ class StaticConfig(pydantic.BaseModel):
                                  'times. If a config parameter is duplicated in more than one ' \
                                  'file, the value in the last file is used.')
 
-        for name, field in cls.__fields__.items():
+        for name, field in cls.model_fields.items():
             if 'command_line' in field.field_info.extra:
                 help_message = field.field_info.description
                 if field.default is not None:
@@ -55,7 +55,7 @@ class StaticConfig(pydantic.BaseModel):
 
         # Initialize config with default values
         config = {}
-        for name, field in cls.__fields__.items():
+        for name, field in cls.model_fields.items():
             # If the default is None and its not optional, then dont set the default because the
             # user must provide this value
             if not field.required:
@@ -66,7 +66,7 @@ class StaticConfig(pydantic.BaseModel):
             with open(config_file, encoding='utf-8') as file:
                 config.update(yaml.safe_load(file))
             for key in config:
-                if key not in cls.__fields__.keys():
+                if key not in cls.model_fields.keys():
                     raise ValueError(f'Unrecognized key "{key}" in config file {config_file}')
         args_dict = vars(args)
         args_dict.pop('config')
@@ -76,7 +76,7 @@ class StaticConfig(pydantic.BaseModel):
         # 2. Command line argument
         # 3. Config file
         # 4. Default
-        for name, field in cls.__fields__.items():
+        for name, field in cls.model_fields.items():
             env_name = field.field_info.extra.get('env')
             arg_name = field.field_info.extra.get('command_line')
             is_list = typing.get_origin(field.outer_type_) is list
@@ -101,7 +101,7 @@ class StaticConfig(pydantic.BaseModel):
                 if type_error['type'] not in ('type_error.none.not_allowed', 'value_error.missing'):
                     print(type_error)
                 else:
-                    field = cls.__fields__[str(type_error['loc'][0])]  # pylint: disable=E1136
+                    field = cls.model_fields[str(type_error['loc'][0])]  # pylint: disable=E1136
                     print(f'ERROR: No value provided for config {field.name} ' \
                           'via any of the following methods:')
                     print(f'- Config file key: {field.name}')

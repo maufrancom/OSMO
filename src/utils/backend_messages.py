@@ -238,12 +238,12 @@ class MessageOptions(pydantic.BaseModel):
     node_conditions: Optional[NodeConditionsBody] = pydantic.Field(
         description='Message for node conditions')
 
-    @pydantic.root_validator(pre=True)
+    @pydantic.model_validator(mode='before')
     def validate(cls, values):  # pylint: disable=no-self-argument
         """ A valid message can only be one of the two types """
         num_fields_set = sum(1 for value in values.values()
                              if value is not None)
         if num_fields_set != 1:
             raise osmo_errors.OSMOUserError(
-                f'Exactly one of the following must be set {cls.__fields__.keys()}')
+                f'Exactly one of the following must be set {cls.model_fields.keys()}')
         return values
