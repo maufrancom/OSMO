@@ -460,7 +460,7 @@ def send_pod_conditions(postgres: connectors.PostgresConnector,
                 text=condition_log)
 
             redis_client.xadd(common.get_workflow_events_redis_name(message.workflow_uuid),
-                              json.loads(log_body.json()),
+                              json.loads(log_body.model_dump_json()),
                               maxlen=max_event_log_lines)
 
             # Update the latest timestamp
@@ -507,7 +507,7 @@ def send_pod_event(postgres: connectors.PostgresConnector,
             retry_id=retry_id,
             text=event_log)
         redis_client.xadd(common.get_workflow_events_redis_name(workflow_uuid),
-                          json.loads(log_body.json()),
+                          json.loads(log_body.model_dump_json()),
                           maxlen=max_event_log_lines)
         redis_client.set(timestamp_key, message.timestamp.timestamp())
         redis_client.expire(timestamp_key, connectors.MAX_LOG_TTL, nx=True)
