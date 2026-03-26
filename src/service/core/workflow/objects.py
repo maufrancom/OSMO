@@ -729,7 +729,8 @@ class CredentialOptions(pydantic.BaseModel):
         description='Generic authentication information')
 
     @pydantic.model_validator(mode='before')
-    def validate_credential(cls, values):  # pylint: disable=no-self-argument
+    @classmethod
+    def validate_credential(cls, values):
         """ A valid credential can only be one of the three types """
         num_fields_set = sum(1 for value in values.values()
                              if value is not None)
