@@ -239,7 +239,8 @@ class MessageOptions(pydantic.BaseModel):
         description='Message for node conditions')
 
     @pydantic.model_validator(mode='before')
-    def validate(cls, values):  # pylint: disable=no-self-argument
+    @classmethod
+    def validate(cls, values):
         """ A valid message can only be one of the two types """
         num_fields_set = sum(1 for value in values.values()
                              if value is not None)

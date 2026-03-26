@@ -143,8 +143,8 @@ class LoginStorage(pydantic.BaseModel):
     def replace_url_without_slash(cls, login_url: str):
         return login_url.rstrip('/')
 
-    @classmethod
     @pydantic.model_validator(mode='before')
+    @classmethod
     def validate_one_login_type(cls, values):
         fields = ('token_login', 'dev_login')
         login_fields = [field for field in fields if values.get(field) is not None]
