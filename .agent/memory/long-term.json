@@ -1,0 +1,41 @@
+{
+  "patterns": [
+    {
+      "id": "pydantic-v2-required-true",
+      "pattern": "Pydantic v2 does not accept required=True in Field(). Fields without defaults are required by default.",
+      "confidence": "high",
+      "source": "episode-006"
+    },
+    {
+      "id": "pydantic-v2-rebuild-subclasses",
+      "pattern": "When dynamically changing model_config['extra'] on Pydantic v2 models, you must rebuild ALL subclasses twice: first pass compiles core schemas, second pass ensures cross-references between subclasses pick up final schemas.",
+      "confidence": "high",
+      "source": "episodes-001-005"
+    },
+    {
+      "id": "bazel-pylint-100-chars",
+      "pattern": "This repo enforces 100-char line limit via pylint in Bazel. json_schema_extra dicts often need multi-line formatting.",
+      "confidence": "high",
+      "source": "episode-006"
+    },
+    {
+      "id": "pydantic-v2-const-to-literal",
+      "pattern": "Pydantic v1 Field(const=True, default='value') becomes Literal['value'] type annotation in v2.",
+      "confidence": "high",
+      "source": "episodes-001-003"
+    },
+    {
+      "id": "pydantic-v2-validator-to-field-validator",
+      "pattern": "Pydantic v1 @validator becomes @field_validator in v2. @root_validator becomes @model_validator.",
+      "confidence": "high",
+      "source": "episodes-001-003"
+    },
+    {
+      "id": "pydantic-v2-schema-extra-to-json-schema-extra",
+      "pattern": "Pydantic v1 schema_extra in Config class becomes json_schema_extra in Field() or model_config in v2.",
+      "confidence": "high",
+      "source": "episodes-001-003"
+    }
+  ],
+  "last_updated": "2026-03-26T09:12:00Z"
+}
