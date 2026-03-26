@@ -100,6 +100,7 @@ class StorageBackend(
     abc.ABC,
     pydantic.BaseModel,
 ):
+    """Abstract base class for storage backends."""
     model_config = pydantic.ConfigDict(
         extra='forbid',
         arbitrary_types_allowed=True,
