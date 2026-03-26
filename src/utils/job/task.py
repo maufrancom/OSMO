@@ -622,7 +622,7 @@ class TaskSpec(pydantic.BaseModel, extra='forbid'):
     @pydantic.field_validator('downloadType', mode='before')
     @classmethod
     def validate_download_type(cls, download_type: Optional[Union[str, connectors.DownloadType]],
-        values: Dict) -> Optional[connectors.DownloadType]:
+        info: pydantic.ValidationInfo) -> Optional[connectors.DownloadType]:
         """
         Validates downloadType. Converts string values to DownloadType enum.
 
@@ -631,7 +631,7 @@ class TaskSpec(pydantic.BaseModel, extra='forbid'):
         """
         if download_type is None:
             return None
-        name = values.get('name', '')
+        name = info.data.get('name', '')
         if isinstance(download_type, connectors.DownloadType):
             return download_type
         if isinstance(download_type, str):
@@ -659,28 +659,28 @@ class TaskSpec(pydantic.BaseModel, extra='forbid'):
 
     @pydantic.field_validator('command')
     @classmethod
-    def validate_command(cls, command: List[str], values: Dict) -> List[str]:
+    def validate_command(cls, command: List[str], info: pydantic.ValidationInfo) -> List[str]:
         """
         Validates command. Returns the value of command if valid.
 
         Raises:
             ValueError: Containers fails validation.
         """
-        name = values.get('name', '')
+        name = info.data.get('name', '')
         if not command:
             raise ValueError(f'Container {name} should have at least one command.')
         return command
 
     @pydantic.field_validator('files')
     @classmethod
-    def validate_files(cls, files: List[File], values: Dict) -> List[File]:
+    def validate_files(cls, files: List[File], info: pydantic.ValidationInfo) -> List[File]:
         """
         Validates that all file paths are unique. Returns the list if valid
 
         Raises:
             ValueError: There are duplicate file paths
         """
-        name = values.get('name', '')
+        name = info.data.get('name', '')
         all_paths: Set[str] = set()
         for file in files:
             if file.path in all_paths:
@@ -703,8 +703,8 @@ class TaskSpec(pydantic.BaseModel, extra='forbid'):
 
     @pydantic.field_validator('exitActions')
     @classmethod
-    def validate_exit_actions(cls, exit_actions: Dict[str, str], values: Dict) -> Dict[str, str]:
-        name = values.get('name', '')
+    def validate_exit_actions(cls, exit_actions: Dict[str, str], info: pydantic.ValidationInfo) -> Dict[str, str]:
+        name = info.data.get('name', '')
         regex = re.compile(CODE_REGEX)
         for key, value in exit_actions.items():
             try:
@@ -927,14 +927,14 @@ class TaskGroupSpec(pydantic.BaseModel):
 
     @pydantic.field_validator('tasks')
     @classmethod
-    def validate_tasks(cls, value: List[TaskSpec], values: Dict) -> List[TaskSpec]:
+    def validate_tasks(cls, value: List[TaskSpec], info: pydantic.ValidationInfo) -> List[TaskSpec]:
         """
         Validates tasks. Returns the value of tasks if valid.
 
         Raises:
             ValueError: Containers fails validation.
         """
-        group_name = values['name']
+        group_name = info.data['name']
 
         # Need at least one task
         if not value:
