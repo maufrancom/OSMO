@@ -1032,8 +1032,8 @@ class Task(pydantic.BaseModel):
     failure_message: str | None = None
     database: connectors.PostgresConnector
     exit_actions: Dict[str, str]
-    node_name: str | None
-    pod_ip: str | None
+    node_name: str | None = None
+    pod_ip: str | None = None
     lead: bool
 
     model_config = pydantic.ConfigDict(arbitrary_types_allowed=True)
