@@ -260,7 +260,7 @@ class TestConfigHistoryQueryParams(unittest.TestCase):
         error_str = str(context.exception)
         self.assertTrue(
             'not a valid enumeration member' in error_str or 'Input should be' in error_str,
-            f"Expected enum validation error, got: {error_str}"
+            f'Expected enum validation error, got: {error_str}'
         )
 
     def test_at_timestamp_with_created_before(self):
