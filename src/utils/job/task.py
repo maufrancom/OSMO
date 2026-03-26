@@ -916,9 +916,7 @@ class TaskGroupSpec(pydantic.BaseModel):
     ignoreNonleadStatus: bool = True  # pylint: disable=invalid-name
     tasks: List[TaskSpec]
 
-    class Config:
-        use_enum_values = True
-        extra = 'forbid'
+    model_config = pydantic.ConfigDict(use_enum_values=True, extra='forbid')
 
     @property
     def inputs(self) -> List[InputType]:

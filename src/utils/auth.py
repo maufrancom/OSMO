@@ -37,8 +37,7 @@ class AsymmetricKeyPair(pydantic.BaseModel):
     public_key: str
     private_key: pydantic.SecretStr
 
-    class Config:
-        keep_untouched = (property,)
+    model_config = pydantic.ConfigDict(ignored_types=(property,))
 
     @classmethod
     def generate(cls) -> 'AsymmetricKeyPair':
