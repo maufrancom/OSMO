@@ -44,13 +44,15 @@ class StaticConfig(pydantic.BaseModel):
                                  'file, the value in the last file is used.')
 
         for name, field in cls.model_fields.items():
-            extra = field.json_schema_extra or {}
+            extra = field.json_schema_extra
+            if not isinstance(extra, dict):
+                extra = {}
             if 'command_line' in extra:
-                help_message = field.description
+                help_message = field.description or ''
                 if field.default is not None:
                     help_message += f' (default: {str(field.default)})'
                 parser.add_argument(f'--{extra["command_line"]}',
-                                    action=extra.get('action', 'store'),
+                                    action=str(extra.get('action', 'store')),
                                     help=help_message)
         args = parser.parse_args()
 
@@ -78,9 +80,11 @@ class StaticConfig(pydantic.BaseModel):
         # 3. Config file
         # 4. Default
         for name, field in cls.model_fields.items():
-            extra = field.json_schema_extra or {}
-            env_name = extra.get('env')
-            arg_name = extra.get('command_line')
+            extra = field.json_schema_extra
+            if not isinstance(extra, dict):
+                extra = {}
+            env_name = str(extra['env']) if 'env' in extra else None
+            arg_name = str(extra['command_line']) if 'command_line' in extra else None
             is_list = typing.get_origin(field.annotation) is list
             # Do we have an environment variable? If so, use that
             if env_name is not None and env_name in os.environ:
@@ -108,7 +112,9 @@ class StaticConfig(pydantic.BaseModel):
                     print(f'ERROR: No value provided for config {field_name} ' \
                           'via any of the following methods:')
                     print(f'- Config file key: {field_name}')
-                    extra = field.json_schema_extra or {}
+                    extra = field.json_schema_extra
+                    if not isinstance(extra, dict):
+                        extra = {}
                     if 'command_line' in extra:
                         command_line = extra['command_line']
                         print(f'- Command line argument: --{command_line}')

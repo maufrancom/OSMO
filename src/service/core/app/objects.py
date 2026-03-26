@@ -24,7 +24,7 @@ import pydantic
 from src.lib.utils import common
 
 
-AppNamePattern = Annotated[str, pydantic.Field(regex=common.APP_NAME_VALIDATION_REGEX)]
+AppNamePattern = Annotated[str, pydantic.Field(pattern=common.APP_NAME_VALIDATION_REGEX)]
 
 
 class ListEntry(pydantic.BaseModel):

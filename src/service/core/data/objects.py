@@ -25,8 +25,8 @@ import pydantic
 from src.lib.utils import common
 
 
-DatasetPattern = Annotated[str, pydantic.Field(regex=common.DATASET_NAME_REGEX)]
-DatasetTagPattern = Annotated[str, pydantic.Field(regex=common.DATASET_BUCKET_TAG_REGEX)]
+DatasetPattern = Annotated[str, pydantic.Field(pattern=common.DATASET_NAME_REGEX)]
+DatasetTagPattern = Annotated[str, pydantic.Field(pattern=common.DATASET_BUCKET_TAG_REGEX)]
 
 
 class DatasetType(enum.Enum):
