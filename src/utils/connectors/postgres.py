@@ -1745,6 +1745,18 @@ class ExtraArgBaseModel(pydantic.BaseModel):
     @classmethod
     def set_extra(cls, extra_type: ExtraType):
         cls.model_config['extra'] = extra_type.value
+        # In Pydantic v2, model schema is compiled at class definition time.
+        # Mutating model_config after the fact requires rebuilding all
+        # subclasses so the new extra setting takes effect.
+        cls._rebuild_subclasses()
+
+    @classmethod
+    def _rebuild_subclasses(cls):
+        """Recursively rebuild all subclasses after model_config mutation."""
+        for subclass in cls.__subclasses__():
+            subclass.model_config['extra'] = cls.model_config['extra']
+            subclass.model_rebuild(force=True)
+            subclass._rebuild_subclasses()
 
 
 class OsmoImageConfig(ExtraArgBaseModel):
