@@ -280,12 +280,16 @@ class WorkflowSpec(pydantic.BaseModel, extra='forbid'):
             name_set.add(name)
 
         for task_spec in values.get('tasks', []):
-            _validate_name(task_spec.name)
+            spec_name = task_spec['name'] if isinstance(task_spec, dict) else task_spec.name
+            _validate_name(spec_name)
 
         for group_spec in values.get('groups', []):
-            _validate_name(group_spec.name)
-            for task_spec in group_spec.tasks:
-                _validate_name(task_spec.name)
+            g_name = group_spec['name'] if isinstance(group_spec, dict) else group_spec.name
+            _validate_name(g_name)
+            g_tasks = group_spec.get('tasks', []) if isinstance(group_spec, dict) else group_spec.tasks
+            for task_spec in g_tasks:
+                spec_name = task_spec['name'] if isinstance(task_spec, dict) else task_spec.name
+                _validate_name(spec_name)
 
         return values
 
