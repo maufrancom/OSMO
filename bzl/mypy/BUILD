@@ -42,6 +42,7 @@ mypy_cli(
         app_requirement("mypy-boto3-sts"),
         app_requirement("opentelemetry-sdk"),
         app_requirement("pydantic"),
+        app_requirement("pydantic-settings"),
         app_requirement("pyjwt"),
         app_requirement("shtab"),
         app_requirement("slack_sdk"),
