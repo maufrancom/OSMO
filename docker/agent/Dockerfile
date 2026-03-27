@@ -3,10 +3,9 @@
 
 # OSMO Agent Image
 #
-# General-purpose agent environment. Ships with common build tools and package
-# managers. The agent discovers what the repo needs and installs/configures
-# the correct runtime (Python version, Go version, etc.) as part of its
-# discovery phase.
+# General-purpose agent environment. Ships with common build tools, package
+# managers, and runtimes. The agent discovers what the repo needs and aligns
+# its environment during preflight.
 #
 # Build (from repo root):
 #   docker build -t osmo-agent:latest -f docker/agent/Dockerfile .
@@ -15,12 +14,14 @@ FROM ubuntu:24.04
 
 ENV DEBIAN_FRONTEND=noninteractive
 
-# System tools + build essentials + deadsnakes PPA (for any Python version)
+# System tools + build essentials + deadsnakes PPA (for Python versions)
 RUN apt-get update -qq && \
     apt-get install -y -qq --no-install-recommends \
       git \
       jq \
       curl \
+      wget \
+      unzip \
       ca-certificates \
       openssh-client \
       build-essential \
@@ -32,7 +33,21 @@ RUN apt-get update -qq && \
     && add-apt-repository -y ppa:deadsnakes/ppa \
     && rm -rf /var/lib/apt/lists/*
 
-# Docker (for testcontainers and DinD — matches Jenkins CI environment)
+# Python 3.10 (OSMO's target runtime) — set as default alongside system 3.12
+RUN apt-get update -qq && \
+    apt-get install -y -qq --no-install-recommends \
+      python3.10 \
+      python3.10-dev \
+      python3.10-venv \
+    && update-alternatives --install /usr/bin/python3 python3 /usr/bin/python3.10 2 \
+    && update-alternatives --install /usr/bin/python3 python3 /usr/bin/python3.12 1 \
+    && update-alternatives --set python3 /usr/bin/python3.10 \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install pip for Python 3.10
+RUN python3.10 -m ensurepip
+
+# Docker (for testcontainers and DinD)
 RUN install -m 0755 -d /etc/apt/keyrings && \
     curl -fsSL https://download.docker.com/linux/ubuntu/gpg -o /etc/apt/keyrings/docker.asc && \
     chmod a+r /etc/apt/keyrings/docker.asc && \
@@ -57,8 +72,20 @@ RUN curl -fsSL "https://github.com/bazelbuild/bazel/releases/download/8.1.1/baze
       -o /usr/local/bin/bazel && \
     chmod +x /usr/local/bin/bazel
 
-# Python tools for the harness itself (runs on system python3)
-RUN pip3 install --break-system-packages openai ruff pip-tools
+# Node.js + pnpm (for frontend builds and run/ scripts)
+RUN curl -fsSL https://deb.nodesource.com/setup_18.x | bash - && \
+    apt-get install -y -qq --no-install-recommends nodejs && \
+    npm install -g pnpm && \
+    rm -rf /var/lib/apt/lists/*
+
+# AWS CLI (for localstack S3 in run/ scripts)
+RUN curl -fsSL "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o /tmp/awscliv2.zip && \
+    unzip -q /tmp/awscliv2.zip -d /tmp && \
+    /tmp/aws/install && \
+    rm -rf /tmp/awscliv2.zip /tmp/aws
+
+# Python tools for the harness itself (runs on system python, not Bazel's)
+RUN python3.10 -m pip install --break-system-packages openai ruff pip-tools
 
 # Non-root user with passwordless sudo and docker access
 RUN useradd -m -s /bin/bash agent && \

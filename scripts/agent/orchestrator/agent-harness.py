@@ -711,6 +711,45 @@ def _review_quality_claim(quality_json):
         return True
 
 
+def _review_validation_claim(validation_json, task_prompt):
+    """Review whether the validation beyond tests was thorough.
+
+    Checks that the agent addressed the key dimensions from validate.md:
+    completeness, behavioral changes, runtime paths, consistency.
+    The reviewer doesn't know the right answers — it checks whether
+    the agent ASKED the right questions.
+    """
+    try:
+        resp = _llm_client.chat.completions.create(
+            model=_llm_model,
+            messages=[
+                {"role": "system", "content": (
+                    "You are reviewing a validation claim. The agent says it validated "
+                    "its changes beyond the test suite. Check whether the validation "
+                    "addressed these dimensions:\n"
+                    "1. Completeness — did it verify the change was applied exhaustively?\n"
+                    "2. Behavioral changes — did it check for implicit/semantic differences, "
+                    "not just API renames?\n"
+                    "3. Runtime paths — did it verify entry points, configs, and error paths?\n"
+                    "4. Consistency — did it check the entire codebase, not just modified files?\n\n"
+                    "Reply 'accept' if the validation is thorough. "
+                    "Reply 'reject' if it's shallow or skipped dimensions."
+                )},
+                {"role": "user", "content": (
+                    f"Task: {task_prompt}\n\n"
+                    f"Validation claim:\n{validation_json}"
+                )},
+            ],
+            max_tokens=10,
+        )
+        verdict = resp.choices[0].message.content.strip().lower()
+        sys.stderr.write(f"  [validation review: {verdict}]\n")
+        return "accept" in verdict
+    except Exception as e:
+        sys.stderr.write(f"  [validation review failed: {e} — accepting]\n")
+        return True
+
+
 def _check_completion_gates():
     """Check gates that block the agent from declaring done.
 
@@ -793,12 +832,22 @@ def _check_completion_gates():
     elif os.path.exists(GATE_VALIDATE):
         try:
             with open(GATE_VALIDATE, "r") as f:
-                vbt = json.loads(f.read())
+                vbt_content = f.read()
+                vbt = json.loads(vbt_content)
             if vbt.get("passed", False) is not True:
                 blockers.append(
                     "BLOCKED: Your validation beyond tests found issues. "
                     "Fix them before finishing."
                 )
+            elif _llm_client:
+                # Review: did the validation actually address the key dimensions?
+                if not _review_validation_claim(vbt_content, task_prompt):
+                    blockers.append(
+                        "BLOCKED: Your validation beyond tests was not thorough enough. "
+                        "Re-read /osmo/agent/skills/validate.md. Did you check: "
+                        "completeness, behavioral changes, runtime paths, and consistency? "
+                        "Update /tmp/validation-beyond-tests.json with deeper validation."
+                    )
         except (json.JSONDecodeError, OSError):
             pass
 
