@@ -704,15 +704,20 @@ class UpdateGroup(WorkflowJob):
                     else:
                         self._restart_task(redis_client, task_obj, total_timeout)
             else:
-                for task_obj in group_obj.tasks:
-                    if task_obj.name == self.task_name:
-                        continue
-                    # If group leader exits with a special failed status like
-                    # FAILED_EVICTED, the other tasks should be labeled as FAILED
-                    # (not FAILED_EVICTED)
-                    status = task.TaskGroupStatus.FAILED if self.status.failed() else self.status
-                    # TODO: Add a new status type for status caused by Lead Container finishing
-                    task_obj.update_status_to_db(update_time, status, 'Lead task finished')
+                # If group leader exits with a special failed status like
+                # FAILED_EVICTED, the other tasks should be labeled as FAILED
+                # (not FAILED_EVICTED)
+                sibling_status = task.TaskGroupStatus.FAILED if self.status.failed() \
+                    else self.status
+                task.Task.batch_update_status_to_db(
+                    database=context.postgres,
+                    workflow_id=self.workflow_id,
+                    group_name=self.group_name,
+                    update_time=update_time,
+                    status=sibling_status,
+                    message='Lead task finished',
+                    lead_task_name=self.task_name,
+                )
         else:  # Nonlead task finished
             if group_obj.spec.has_group_barrier():
                 self._remove_barrier(redis_client)
@@ -742,11 +747,15 @@ class UpdateGroup(WorkflowJob):
                     k8s_factory
                 )
             elif self.status.failed() and not group_obj.spec.ignoreNonleadStatus:
-                for task_obj in group_obj.tasks:
-                    if task_obj.name == self.task_name:
-                        continue
-                    task_obj.update_status_to_db(update_time, task.TaskGroupStatus.FAILED,
-                                                 f'Task {self.task_name} Failed.')
+                task.Task.batch_update_status_to_db(
+                    database=context.postgres,
+                    workflow_id=self.workflow_id,
+                    group_name=self.group_name,
+                    update_time=update_time,
+                    status=task.TaskGroupStatus.FAILED,
+                    message=f'Task {self.task_name} Failed.',
+                    lead_task_name=self.task_name,
+                )
         return update_status
 
     def schedule_cleanup_job(self, context: JobExecutionContext, workflow_obj: workflow.Workflow,
@@ -872,9 +881,15 @@ class UpdateGroup(WorkflowJob):
         if self.status.canceled() or \
             self.status in [task.TaskGroupStatus.FAILED_UPSTREAM,
                             task.TaskGroupStatus.FAILED_SERVER_ERROR]:
-            for task_obj in group_obj.tasks:
-                task_obj.update_status_to_db(update_time, self.status,
-                                             self.message, self.exit_code)
+            task.Task.batch_update_status_to_db(
+                database=context.postgres,
+                workflow_id=self.workflow_id,
+                group_name=self.group_name,
+                update_time=update_time,
+                status=self.status,
+                message=self.message,
+                exit_code=self.exit_code,
+            )
         else:
             pool_info = connectors.Pool.fetch_from_db(context.postgres, workflow_obj.pool)
 
@@ -999,8 +1014,8 @@ class UpdateGroup(WorkflowJob):
             return
         workflow_config = context.postgres.get_workflow_configs()
         backend_config_cache = connectors.BackendConfigCache()
-        group_obj = task.TaskGroup.fetch_from_db(context.postgres, self.workflow_id,
-                                                 self.group_name)
+        group_obj = task.TaskGroup.fetch_metadata_from_db(context.postgres, self.workflow_id,
+                                                          self.group_name)
         backend: connectors.Backend | None = None
         try:
             backend = backend_config_cache.get(workflow_obj.backend)
@@ -1089,9 +1104,9 @@ class UpdateGroup(WorkflowJob):
             update_cmd,
             (task_obj.task_db_key, new_task.task_db_key))
 
-        # Refetch group so retry_id is updated
-        group = task.TaskGroup.fetch_from_db(context.postgres, self.workflow_id,
-                                             self.group_name)
+        # Refetch group metadata (tasks not needed — new_task is passed explicitly)
+        group = task.TaskGroup.fetch_metadata_from_db(context.postgres, self.workflow_id,
+                                                      self.group_name)
 
         # Get cleanup job
         labels = {
@@ -1239,7 +1254,7 @@ class RescheduleTask(BackendJob, WorkflowJob):
         be removed from the message queue, or false if the job failed.
         """
         group_name = task.Task.fetch_group_name(context.postgres, self.workflow_id, self.task_name)
-        group = task.TaskGroup.fetch_from_db(
+        group = task.TaskGroup.fetch_metadata_from_db(
             context.postgres, self.workflow_id, group_name)
         if group.status.group_finished():
             # UpdateGroup changed status of all tasks and cleaned up

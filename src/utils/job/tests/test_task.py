@@ -1,5 +1,5 @@
 """
-SPDX-FileCopyrightText: Copyright (c) 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+SPDX-FileCopyrightText: Copyright (c) 2025-2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.  # pylint: disable=line-too-long
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -16,7 +16,9 @@ limitations under the License.
 SPDX-License-Identifier: Apache-2.0
 """
 import copy
-from typing import Dict, List
+import datetime
+from typing import Any, Dict, List, Union, cast
+from unittest import mock
 import unittest
 
 from src.lib.utils import common
@@ -37,8 +39,10 @@ def create_lvm_volume(name: str, size: str):
             }
     }
 
-def create_container(cpu: str = '1', ephemeral_storage: str = '1Gi', memory: str = '1Gi',
-                     name='user', volume_mounts: List = []):
+def create_container(cpu: Union[str, int] = '1', ephemeral_storage: str = '1Gi',
+                     memory: str = '1Gi',
+                     name: str = 'user', volume_mounts: List[Any] | None = None):
+    volume_mounts = volume_mounts if volume_mounts is not None else []
     result = {
         'name': name,
         'image': 'ubuntu:latest',
@@ -85,7 +89,7 @@ def create_toleration():
 
 
 class TaskTest(unittest.TestCase):
-    def check_other_fields(self, final_pod: Dict, tolerations: Dict, labels: List):
+    def check_other_fields(self, final_pod: Dict, tolerations: List, labels: Dict):
         self.assertEqual(final_pod['spec']['tolerations'], tolerations)
         self.assertEqual(final_pod['metadata']['labels'], labels)
 
@@ -294,7 +298,7 @@ class TaskTest(unittest.TestCase):
         answer = copy.deepcopy(pod)
 
         # Override spec with empty arrays
-        pod_override = {'spec': {'containers': [], 'volumes': []}}
+        pod_override: Dict[str, Any] = {'spec': {'containers': [], 'volumes': []}}
         pod = task.apply_pod_template(pod, pod_override)
         self.assertEqual(pod, answer)
 
@@ -308,33 +312,35 @@ class TaskTest(unittest.TestCase):
         tokens = resource.get_allocatable_tokens({})
 
         # Evaluate the values for storage
-        self.assertAlmostEqual(tokens[f'USER_STORAGE_m'], 10 * 1024 * 1024 * 1024 * 1024, places=5)
-        self.assertAlmostEqual(tokens[f'USER_STORAGE_B'], 10 * 1024 * 1024 * 1024, places=5)
-        self.assertAlmostEqual(tokens[f'USER_STORAGE_Ki'], 10 * 1024 * 1024, places=5)
-        self.assertAlmostEqual(tokens[f'USER_STORAGE_Mi'], 10 * 1024, places=5)
-        self.assertAlmostEqual(tokens[f'USER_STORAGE_Gi'], 10, places=5)
-        self.assertAlmostEqual(tokens[f'USER_STORAGE_Ti'], 10.0 / 1024 , places=5)
+        # cast() used because get_allocatable_tokens returns Optional values,
+        # but these keys are guaranteed non-None when storage is set.
+        self.assertAlmostEqual(cast(float, tokens['USER_STORAGE_m']), 10 * 1024 * 1024 * 1024 * 1024, places=5)
+        self.assertAlmostEqual(cast(float, tokens['USER_STORAGE_B']), 10 * 1024 * 1024 * 1024, places=5)
+        self.assertAlmostEqual(cast(float, tokens['USER_STORAGE_Ki']), 10 * 1024 * 1024, places=5)
+        self.assertAlmostEqual(cast(float, tokens['USER_STORAGE_Mi']), 10 * 1024, places=5)
+        self.assertAlmostEqual(cast(float, tokens['USER_STORAGE_Gi']), 10, places=5)
+        self.assertAlmostEqual(cast(float, tokens['USER_STORAGE_Ti']), 10.0 / 1024, places=5)
 
         # Evaluate the values for memory (test that values with decimal work)
-        self.assertAlmostEqual(tokens[f'USER_MEMORY_m'], 10.5 * 1024 * 1024 * 1024, places=5)
-        self.assertAlmostEqual(tokens[f'USER_MEMORY_B'], 10.5 * 1024 * 1024, places=5)
-        self.assertAlmostEqual(tokens[f'USER_MEMORY_Ki'], 10.5 * 1024, places=5)
-        self.assertAlmostEqual(tokens[f'USER_MEMORY_Mi'], 10.5 , places=5)
-        self.assertAlmostEqual(tokens[f'USER_MEMORY_Gi'], 10.5 / 1024, places=5)
-        self.assertAlmostEqual(tokens[f'USER_MEMORY_Ti'], 10.5 / 1024 /1024, places=5)
+        self.assertAlmostEqual(cast(float, tokens['USER_MEMORY_m']), 10.5 * 1024 * 1024 * 1024, places=5)
+        self.assertAlmostEqual(cast(float, tokens['USER_MEMORY_B']), 10.5 * 1024 * 1024, places=5)
+        self.assertAlmostEqual(cast(float, tokens['USER_MEMORY_Ki']), 10.5 * 1024, places=5)
+        self.assertAlmostEqual(cast(float, tokens['USER_MEMORY_Mi']), 10.5, places=5)
+        self.assertAlmostEqual(cast(float, tokens['USER_MEMORY_Gi']), 10.5 / 1024, places=5)
+        self.assertAlmostEqual(cast(float, tokens['USER_MEMORY_Ti']), 10.5 / 1024 / 1024, places=5)
 
     def test_token_values_with_incomplete_resource_spec(self):
         """ Test that the keys are still populated, with values None. """
-        resource = connectors.ResourceSpec()
-        tokens = resource.get_allocatable_tokens({})
-        for resource in ['CPU', 'GPU']:
-            self.assertIsNone(tokens[f'USER_{resource}'])
-        for resource in ['MEMORY', 'STORAGE']:
-            self.assertIsNone(tokens[f'USER_{resource}'])
-            self.assertIsNone(tokens[f'USER_{resource}_VAL'])
-            self.assertIsNone(tokens[f'USER_{resource}_UNIT'])
+        resource_spec = connectors.ResourceSpec()
+        tokens = resource_spec.get_allocatable_tokens({})
+        for resource_name in ['CPU', 'GPU']:
+            self.assertIsNone(tokens[f'USER_{resource_name}'])
+        for resource_name in ['MEMORY', 'STORAGE']:
+            self.assertIsNone(tokens[f'USER_{resource_name}'])
+            self.assertIsNone(tokens[f'USER_{resource_name}_VAL'])
+            self.assertIsNone(tokens[f'USER_{resource_name}_UNIT'])
             for target_unit in common.MEASUREMENTS_SHORT:
-                self.assertIsNone(tokens[f'USER_{resource}_{target_unit}'])
+                self.assertIsNone(tokens[f'USER_{resource_name}_{target_unit}'])
 
     def test_default_user_and_override_resource_spec(self):
         """
@@ -450,6 +456,218 @@ class TaskTest(unittest.TestCase):
 
         # Check that the contents of the list is correct
         self.assertEqual(rendered_excluded_list, exclude_list)
+
+
+def _summary(status: str, lead: bool, count: int = 1) -> Dict:
+    """Helper to build a status summary row for _aggregate_status tests."""
+    return {'status': status, 'lead': lead, 'count': count}
+
+
+def _make_group(ignore_nonlead: bool = True) -> task.TaskGroup:
+    """Create a minimal TaskGroup for testing _aggregate_status."""
+    spec = task.TaskGroupSpec(
+        name='test-group',
+        ignoreNonleadStatus=ignore_nonlead,
+        tasks=[task.TaskSpec(name='lead-task', image='ubuntu:latest',
+                             command=['echo'], lead=True)],
+    )
+    return task.TaskGroup(
+        name='test-group',
+        group_uuid=common.generate_unique_id(),
+        spec=spec,
+        tasks=[],
+        remaining_upstream_groups=set(),
+        downstream_groups=set(),
+        database=mock.create_autospec(connectors.PostgresConnector, instance=True),
+    )
+
+
+class AggregateStatusTest(unittest.TestCase):
+    """Tests for TaskGroup._aggregate_status with lightweight summary rows."""
+
+    def test_all_running(self):
+        group = _make_group()
+        summary = [
+            _summary('RUNNING', True),
+            _summary('RUNNING', False, 3),
+        ]
+        self.assertEqual(group._aggregate_status(summary), task.TaskGroupStatus.RUNNING)
+
+    def test_running_takes_precedence_over_initializing(self):
+        group = _make_group()
+        summary = [
+            _summary('RUNNING', True),
+            _summary('INITIALIZING', False, 2),
+        ]
+        self.assertEqual(group._aggregate_status(summary), task.TaskGroupStatus.RUNNING)
+
+    def test_all_initializing(self):
+        group = _make_group()
+        summary = [_summary('INITIALIZING', True), _summary('INITIALIZING', False, 3)]
+        self.assertEqual(group._aggregate_status(summary), task.TaskGroupStatus.INITIALIZING)
+
+    def test_scheduling_not_group_finished(self):
+        """SCHEDULING is not group_finished, so should return INITIALIZING when no RUNNING."""
+        group = _make_group()
+        summary = [_summary('SCHEDULING', True), _summary('SCHEDULING', False, 2)]
+        self.assertEqual(group._aggregate_status(summary), task.TaskGroupStatus.INITIALIZING)
+
+    def test_all_completed(self):
+        group = _make_group()
+        summary = [
+            _summary('COMPLETED', True),
+            _summary('COMPLETED', False, 4),
+        ]
+        self.assertEqual(group._aggregate_status(summary), task.TaskGroupStatus.COMPLETED)
+
+    def test_one_failed_rest_completed(self):
+        group = _make_group(ignore_nonlead=False)
+        summary = [
+            _summary('COMPLETED', True),
+            _summary('FAILED', False),
+        ]
+        self.assertEqual(group._aggregate_status(summary), task.TaskGroupStatus.FAILED)
+
+    def test_failed_upstream_takes_precedence(self):
+        group = _make_group()
+        summary = [
+            _summary('FAILED_UPSTREAM', False),
+            _summary('FAILED', True),
+        ]
+        self.assertEqual(group._aggregate_status(summary), task.TaskGroupStatus.FAILED_UPSTREAM)
+
+    def test_failed_server_error_takes_precedence_over_failed(self):
+        group = _make_group()
+        summary = [
+            _summary('FAILED_SERVER_ERROR', True),
+            _summary('FAILED', False),
+        ]
+        self.assertEqual(group._aggregate_status(summary),
+                         task.TaskGroupStatus.FAILED_SERVER_ERROR)
+
+    def test_failed_preempted_takes_precedence_over_failed(self):
+        group = _make_group()
+        summary = [
+            _summary('FAILED_PREEMPTED', True),
+            _summary('FAILED', False),
+        ]
+        self.assertEqual(group._aggregate_status(summary),
+                         task.TaskGroupStatus.FAILED_PREEMPTED)
+
+    def test_failed_evicted_lead(self):
+        group = _make_group()
+        summary = [
+            _summary('FAILED_EVICTED', True),
+            _summary('COMPLETED', False, 3),
+        ]
+        self.assertEqual(group._aggregate_status(summary), task.TaskGroupStatus.FAILED_EVICTED)
+
+    def test_ignore_nonlead_nonlead_failed_lead_completed(self):
+        """With ignoreNonleadStatus=True, non-lead failures are ignored."""
+        group = _make_group(ignore_nonlead=True)
+        summary = [
+            _summary('COMPLETED', True),
+            _summary('FAILED', False, 3),
+        ]
+        self.assertEqual(group._aggregate_status(summary), task.TaskGroupStatus.COMPLETED)
+
+    def test_ignore_nonlead_nonlead_evicted_lead_completed(self):
+        """With ignoreNonleadStatus=True, non-lead FAILED_EVICTED is ignored."""
+        group = _make_group(ignore_nonlead=True)
+        summary = [
+            _summary('COMPLETED', True),
+            _summary('FAILED_EVICTED', False, 2),
+        ]
+        self.assertEqual(group._aggregate_status(summary), task.TaskGroupStatus.COMPLETED)
+
+    def test_no_ignore_nonlead_failed(self):
+        """With ignoreNonleadStatus=False, non-lead failure is considered."""
+        group = _make_group(ignore_nonlead=False)
+        summary = [
+            _summary('COMPLETED', True),
+            _summary('FAILED', False),
+        ]
+        self.assertEqual(group._aggregate_status(summary), task.TaskGroupStatus.FAILED)
+
+    def test_empty_summary_returns_running(self):
+        group = _make_group()
+        self.assertEqual(group._aggregate_status([]), task.TaskGroupStatus.RUNNING)
+
+    def test_failed_upstream_before_server_error(self):
+        """FAILED_UPSTREAM is checked before FAILED_SERVER_ERROR."""
+        group = _make_group()
+        summary = [
+            _summary('FAILED_UPSTREAM', False),
+            _summary('FAILED_SERVER_ERROR', True),
+        ]
+        self.assertEqual(group._aggregate_status(summary), task.TaskGroupStatus.FAILED_UPSTREAM)
+
+    def test_multiple_counts(self):
+        """Verify count is used correctly for the COMPLETED check."""
+        group = _make_group(ignore_nonlead=False)
+        summary = [
+            _summary('COMPLETED', True, 1),
+            _summary('COMPLETED', False, 9),
+        ]
+        self.assertEqual(group._aggregate_status(summary), task.TaskGroupStatus.COMPLETED)
+
+    def test_mixed_finished_not_all_completed(self):
+        """COMPLETED + RESCHEDULED considered tasks should not return COMPLETED."""
+        group = _make_group(ignore_nonlead=True)
+        summary = [
+            _summary('COMPLETED', True),
+            _summary('RESCHEDULED', True),
+        ]
+        # Both are lead, both considered. Not all COMPLETED → falls through to RUNNING.
+        self.assertEqual(group._aggregate_status(summary), task.TaskGroupStatus.RUNNING)
+
+
+class BatchUpdateValidationTest(unittest.TestCase):
+    """Tests for Task.batch_update_status_to_db input validation."""
+
+    def test_rejects_non_finished_status_running(self):
+        with self.assertRaises(ValueError):
+            task.Task.batch_update_status_to_db(
+                database=mock.Mock(),
+                workflow_id='wf-1',
+                group_name='group-1',
+                update_time=datetime.datetime.now(),
+                status=task.TaskGroupStatus.RUNNING,
+                message='should fail',
+            )
+
+    def test_rejects_non_finished_status_waiting(self):
+        with self.assertRaises(ValueError):
+            task.Task.batch_update_status_to_db(
+                database=mock.Mock(),
+                workflow_id='wf-1',
+                group_name='group-1',
+                update_time=datetime.datetime.now(),
+                status=task.TaskGroupStatus.WAITING,
+                message='should fail',
+            )
+
+    def test_rejects_non_finished_status_processing(self):
+        with self.assertRaises(ValueError):
+            task.Task.batch_update_status_to_db(
+                database=mock.Mock(),
+                workflow_id='wf-1',
+                group_name='group-1',
+                update_time=datetime.datetime.now(),
+                status=task.TaskGroupStatus.PROCESSING,
+                message='should fail',
+            )
+
+    def test_rejects_non_finished_status_initializing(self):
+        with self.assertRaises(ValueError):
+            task.Task.batch_update_status_to_db(
+                database=mock.Mock(),
+                workflow_id='wf-1',
+                group_name='group-1',
+                update_time=datetime.datetime.now(),
+                status=task.TaskGroupStatus.INITIALIZING,
+                message='should fail',
+            )
 
 
 if __name__ == '__main__':

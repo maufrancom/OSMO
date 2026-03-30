@@ -1264,8 +1264,8 @@ class Workflow(pydantic.BaseModel):
         groups_objs = []
         group_rows = self.database.execute_fetch_command(fetch_cmd, (self.workflow_id,))
         for group_row in group_rows:
-            group_obj = task.TaskGroup.fetch_from_db(self.database, self.workflow_id,
-                                                     group_row.name)
+            group_obj = task.TaskGroup.fetch_metadata_from_db(self.database, self.workflow_id,
+                                                              group_row.name)
             groups_objs.append(group_obj)
         return groups_objs
 
