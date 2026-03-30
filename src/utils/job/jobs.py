@@ -1182,12 +1182,14 @@ class UpdateGroup(WorkflowJob):
         if len(barrier_set) >= count:
             action_key = f'barrier-{common.generate_unique_id()}'
             attributes: Dict[str, str] = {'action': 'barrier'}
-            redis_client.set(action_key, json.dumps(attributes))
-            redis_client.expire(action_key, total_timeout, nx=True)
 
             task_names = [name.decode() for name in barrier_set]
             retry_ids = task.Task.batch_fetch_latest_retry_ids(
                 database, self.workflow_id, task_names)
+
+            pipe = redis_client.pipeline()
+            pipe.set(action_key, json.dumps(attributes))
+            pipe.expire(action_key, total_timeout, nx=True)
 
             for task_name in task_names:
                 retry_id = retry_ids.get(task_name)
@@ -1199,7 +1201,9 @@ class UpdateGroup(WorkflowJob):
                              self.workflow_id, task_name, count)
                 queue_name = workflow.action_queue_name(
                     self.workflow_id, task_name, retry_id)
-                redis_client.lpush(queue_name, action_key)
+                pipe.lpush(queue_name, action_key)
+
+            pipe.execute()
 
     def _restart_task(self, redis_client, task_obj: task.Task, total_timeout: int):
         key = f'restart-{common.generate_unique_id()}'
