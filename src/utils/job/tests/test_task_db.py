@@ -157,7 +157,7 @@ class BatchUpdateStatusDbTest(TaskDbFixture):
             update_time=now,
             status=task.TaskGroupStatus.FAILED,
             message='sibling failed',
-            exclude_task_name='task1',
+            lead_task_name='task1',
         )
 
         row1 = self._fetch_task_status('task1')

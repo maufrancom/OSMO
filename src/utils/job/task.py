@@ -1418,7 +1418,7 @@ class Task(pydantic.BaseModel):
         status: TaskGroupStatus,
         message: str,
         exit_code: int | None = None,
-        exclude_task_name: str | None = None,
+        lead_task_name: str | None = None,
     ) -> None:
         """Batch-update all tasks in a group to a terminal status in a single query.
 
@@ -1434,7 +1434,7 @@ class Task(pydantic.BaseModel):
             status: The terminal status to set (must be a finished status).
             message: Failure/completion message.
             exit_code: Optional exit code.
-            exclude_task_name: If set, skip this task (already updated separately).
+            lead_task_name: If set, skip this task (already updated separately).
         """
         if not status.finished():
             raise ValueError(
@@ -1458,8 +1458,8 @@ class Task(pydantic.BaseModel):
             'WHERE t2.name = tasks.name AND t2.workflow_id = tasks.workflow_id '
             'AND t2.group_name = tasks.group_name)', [])
 
-        if exclude_task_name is not None:
-            update_cmd.add_condition('name != %s', [exclude_task_name])
+        if lead_task_name is not None:
+            update_cmd.add_condition('name != %s', [lead_task_name])
 
         update_cmd.add_field('status', status.name)
         update_cmd.add_field('end_time', update_time)

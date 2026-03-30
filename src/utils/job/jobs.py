@@ -716,7 +716,7 @@ class UpdateGroup(WorkflowJob):
                     update_time=update_time,
                     status=sibling_status,
                     message='Lead task finished',
-                    exclude_task_name=self.task_name,
+                    lead_task_name=self.task_name,
                 )
         else:  # Nonlead task finished
             if group_obj.spec.has_group_barrier():
@@ -754,7 +754,7 @@ class UpdateGroup(WorkflowJob):
                     update_time=update_time,
                     status=task.TaskGroupStatus.FAILED,
                     message=f'Task {self.task_name} Failed.',
-                    exclude_task_name=self.task_name,
+                    lead_task_name=self.task_name,
                 )
         return update_status
 
