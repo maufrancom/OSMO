@@ -1175,7 +1175,8 @@ class UpdateGroup(WorkflowJob):
         redis_client.delete(key)
 
     def _notify_barrier(self, database, redis_client, total_timeout: int):
-        barrier_key = task_common.barrier_key(self.workflow_id, self.group_name, task.GROUP_BARRIER_NAME)
+        barrier_key = task_common.barrier_key(
+            self.workflow_id, self.group_name, task.GROUP_BARRIER_NAME)
         count = task.TaskGroup.fetch_active_group_size(database, self.workflow_id, self.group_name)
         barrier_set = redis_client.smembers(barrier_key)
 
