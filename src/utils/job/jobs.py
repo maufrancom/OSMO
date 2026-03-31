@@ -1203,6 +1203,7 @@ class UpdateGroup(WorkflowJob):
                 queue_name = workflow.action_queue_name(
                     self.workflow_id, task_name, retry_id)
                 pipe.lpush(queue_name, action_key)
+                pipe.expire(queue_name, total_timeout, nx=True)
 
             pipe.execute()
 
