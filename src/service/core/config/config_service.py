@@ -192,15 +192,12 @@ def create_clean_config_api(app: fastapi.FastAPI):
             by_alias=True, exclude_unset=True)
 
         try:
-            connectors.ExtraArgBaseModel.set_extra(connectors.ExtraType.IGNORE)
-            configs = connectors.ServiceConfig(**service_configs_dict)
+            configs = connectors.ServiceConfig.from_db(service_configs_dict)
             updated_configs = configs.serialize(postgres)
             for key, value in updated_configs.items():
                 postgres.set_config(key, value)
         except pydantic.ValidationError as err:
             raise osmo_errors.OSMOUsageError(f'{err}')
-        finally:
-            connectors.ExtraArgBaseModel.set_extra(connectors.ExtraType.ALLOW)
         return postgres.get_service_configs().model_dump(by_alias=True,
                                                                         exclude_unset=True)
 
@@ -1086,7 +1083,7 @@ def rollback_config(
     if request.config_type == connectors.ConfigHistoryType.SERVICE:
         helpers.put_configs(
             objects.PutConfigsRequest(
-                configs=connectors.ServiceConfig(**history_entry['data']),
+                configs=connectors.ServiceConfig.from_db(history_entry['data']),
                 description=description,
                 tags=request.tags
             ),
@@ -1098,7 +1095,7 @@ def rollback_config(
     elif request.config_type == connectors.ConfigHistoryType.WORKFLOW:
         helpers.put_configs(
             objects.PutConfigsRequest(
-                configs=connectors.WorkflowConfig(**history_entry['data']),
+                configs=connectors.WorkflowConfig.from_db(history_entry['data']),
                 description=description,
                 tags=request.tags
             ),
@@ -1110,7 +1107,7 @@ def rollback_config(
     elif request.config_type == connectors.ConfigHistoryType.DATASET:
         helpers.put_configs(
             objects.PutConfigsRequest(
-                configs=connectors.DatasetConfig(**history_entry['data']),
+                configs=connectors.DatasetConfig.from_db(history_entry['data']),
                 description=description,
                 tags=request.tags
             ),
