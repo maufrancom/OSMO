@@ -60,7 +60,7 @@ BACKEND_JOB_QUEUE_PREFIX = '{osmo}:{job-queue}:{backend}'
 # used to calculate the slot hash. This way, all queues made by kombu end up in the same
 # slot and hence same shard. This is needed to avoid crossslot key errors when using a redis
 # cluster
-TRANSPORT_OPTIONS = {'global_keyprefix': f'{JOB_QUEUE_PREFIX}:'}
+TRANSPORT_OPTIONS = {'global_keyprefix': f'{JOB_QUEUE_PREFIX}:', 'queue_order_strategy': 'priority'}
 
 MAX_LOG_TTL = 20 * 24 * 60 * 60
 
@@ -258,7 +258,7 @@ def get_backend_option_name(backend: str) -> str:
 
 
 def get_backend_transport_option(backend: str) -> Dict:
-    return {'global_keyprefix': get_backend_option_name(backend)}
+    return {'global_keyprefix': get_backend_option_name(backend), 'queue_order_strategy': 'priority'}
 
 
 def delete_redis_backend(backend: str, config: RedisConfig):
