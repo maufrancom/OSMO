@@ -572,8 +572,9 @@ class RsyncClient:
         else:
             os.makedirs(resolved_dst, exist_ok=True)
 
-        logger.debug('Downloading from %s to %s, with flags %s',
-                     resolved_src, resolved_dst, RSYNC_FLAGS)
+        print(f'Downloading from {self._rsync_request.original_remote_path} to {resolved_dst}')
+        logger.debug('Rsync command: %s %s %s %s',
+                     self._rsync_bin_path, RSYNC_FLAGS, resolved_src, resolved_dst)
 
         try:
             process = await asyncio.create_subprocess_exec(
@@ -589,6 +590,7 @@ class RsyncClient:
             if process.returncode != 0:
                 raise osmo_errors.OSMOError(f'Rsync failed: {stderr.decode()}')
             else:
+                print('Rsync download completed successfully.')
                 logger.info(
                     'Rsync download completed successfully for %s/%s',
                     self._rsync_request.workflow_id,
