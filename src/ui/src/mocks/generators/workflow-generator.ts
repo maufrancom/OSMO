@@ -78,6 +78,7 @@ import {
 import { MOCK_CONFIG, type WorkflowPatterns } from "@/mocks/seed/types";
 import { hashString, getMockDelay, parsePagination, parseWorkflowFilters, hasActiveFilters } from "@/mocks/utils";
 import { getGlobalMockConfig } from "@/mocks/global-config";
+import { MOCK_WORKFLOWS, getMockWorkflow } from "@/mocks/mock-workflows";
 
 export { WorkflowStatus, TaskGroupStatus, WorkflowPriority };
 
@@ -1321,25 +1322,64 @@ export class WorkflowGenerator {
     const { offset, limit } = parsePagination(url, { limit: 20 });
     const filters = parseWorkflowFilters(url);
 
+    // Convert hardcoded mock workflows to list entries so they participate in filtering/pagination
+    const mockListEntries: SrcServiceCoreWorkflowObjectsListEntry[] = Object.values(MOCK_WORKFLOWS).map((mw) => ({
+      user: mw.submitted_by,
+      name: mw.name,
+      workflow_uuid: mw.uuid,
+      submit_time: mw.submit_time,
+      start_time: mw.start_time,
+      end_time: mw.end_time,
+      queued_time: mw.queued_time,
+      duration: mw.duration,
+      status: mw.status,
+      overview: `${mw.groups.length} groups, ${mw.groups.reduce((sum, g) => sum + (g.tasks?.length ?? 0), 0)} tasks`,
+      logs: mw.logs,
+      error_logs: mw.status.toString().startsWith("FAILED") ? `/api/workflow/${mw.name}/logs?type=error` : undefined,
+      grafana_url: `https://grafana.example.com/d/workflow/${mw.name}`,
+      dashboard_url: `https://dashboard.example.com/workflow/${mw.name}`,
+      pool: mw.pool,
+      app_owner: undefined,
+      app_name: undefined,
+      app_version: undefined,
+      priority: mw.priority as Priority,
+    }));
+
     if (hasActiveFilters(filters)) {
       // When filtering, generate the full scannable set, filter, then paginate
       const { entries } = this.generatePage(0, this.total);
-      let filtered = entries;
+      const allEntries = [...mockListEntries, ...entries.map((w) => this.toListEntry(w))];
+      let filtered = allEntries;
       if (filters.statuses.length > 0) filtered = filtered.filter((w) => filters.statuses.includes(w.status));
       if (filters.pools.length > 0) filtered = filtered.filter((w) => w.pool && filters.pools.includes(w.pool));
-      if (filters.users.length > 0) filtered = filtered.filter((w) => filters.users.includes(w.submitted_by));
+      if (filters.users.length > 0) filtered = filtered.filter((w) => w.user && filters.users.includes(w.user));
 
       const page = filtered.slice(offset, offset + limit);
       return {
-        workflows: page.map((w) => this.toListEntry(w)),
+        workflows: page,
         more_entries: offset + limit < filtered.length,
       };
     }
 
-    const { entries, total } = this.generatePage(offset, limit);
+    // Mock entries are prepended to the virtual list, shifting generated entries down.
+    // Compute which portion of the combined list falls within [offset, offset+limit).
+    const mockCount = mockListEntries.length;
+    const totalCombined = mockCount + this.total;
+
+    // Slice mock entries for this page
+    const mockStart = Math.min(offset, mockCount);
+    const mockEnd = Math.min(offset + limit, mockCount);
+    const mockSlice = mockListEntries.slice(mockStart, mockEnd);
+
+    // Fill remaining page slots from generated entries
+    const remainingSlots = limit - mockSlice.length;
+    const generatedOffset = Math.max(0, offset - mockCount);
+    const { entries } = this.generatePage(generatedOffset, remainingSlots);
+    const generatedSlice = entries.map((w) => this.toListEntry(w));
+
     return {
-      workflows: entries.map((w) => this.toListEntry(w)),
-      more_entries: offset + limit < total,
+      workflows: [...mockSlice, ...generatedSlice],
+      more_entries: offset + limit < totalCombined,
     };
   };
 
@@ -1351,6 +1391,19 @@ export class WorkflowGenerator {
     await delay(getMockDelay());
     const workflowName = params.name as string;
     const taskName = params.taskName as string;
+
+    // Check hardcoded mock workflows first so retry/logs state is preserved
+    const mockWorkflow = getMockWorkflow(workflowName);
+    if (mockWorkflow) {
+      for (const group of mockWorkflow.groups ?? []) {
+        const task = group.tasks?.find((t) => t.name === taskName);
+        if (task) {
+          return HttpResponse.json(task);
+        }
+      }
+      return new HttpResponse(null, { status: 404 });
+    }
+
     const workflow = this.getByName(workflowName);
     for (const group of workflow.groups) {
       const task = group.tasks.find((t) => t.name === taskName);

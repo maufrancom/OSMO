@@ -22,15 +22,14 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
-    "test:e2e": "playwright test",
-    "test:e2e:ui": "playwright test --ui",
-    "test:e2e:headed": "playwright test --headed",
+    "test:e2e": "node scripts/test-e2e.mjs",
+    "test:e2e:ui": "node scripts/test-e2e.mjs --ui",
+    "test:e2e:headed": "node scripts/test-e2e.mjs --headed",
     "test:all": "pnpm test && pnpm test:e2e",
     "licenses:check": "node scripts/check-licenses.mjs",
     "licenses:generate": "node scripts/generate-licenses.mjs",
     "licenses": "node scripts/check-licenses.mjs && node scripts/generate-licenses.mjs",
-    "validate": "pnpm licenses:check && pnpm type-check && pnpm lint && pnpm format:check && pnpm test && pnpm build",
-    "validate:coverage": "pnpm licenses:check && pnpm type-check && pnpm lint && pnpm format:check && pnpm test:coverage && pnpm build"
+    "validate": "pnpm licenses:check && pnpm type-check && pnpm lint && pnpm format:check && pnpm test:all && pnpm build"
   },
   "dependencies": {
     "@codemirror/lang-json": "^6.0.2",
