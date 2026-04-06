@@ -95,7 +95,7 @@ def setup_parser(parser: argparse._SubParsersAction):
     compose_parser.set_defaults(func=_compose)
 
 
-def _run_local(service_client, args: argparse.Namespace):
+def _run_local(service_client, args: argparse.Namespace):  # pylint: disable=unused-argument
     """Execute a workflow locally via Docker using the parsed CLI arguments."""
     try:
         success = local_executor.run_workflow_locally(
@@ -115,7 +115,7 @@ def _run_local(service_client, args: argparse.Namespace):
         sys.exit(1)
 
 
-def _compose(service_client, args: argparse.Namespace):
+def _compose(service_client, args: argparse.Namespace):  # pylint: disable=unused-argument
     """Resolve includes and default-values, then output the flat spec."""
     try:
         abs_path = os.path.abspath(args.workflow_file)

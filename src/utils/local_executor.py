@@ -44,7 +44,8 @@ STATE_FILE_NAME = '.osmo-state.json'
 
 @dataclasses.dataclass
 class TaskNode:
-    """A node in the workflow DAG, linking a task spec to its upstream and downstream dependencies."""
+    """A node in the workflow DAG, linking a task spec to its upstream
+    and downstream dependencies."""
 
     name: str
     spec: task_module.TaskSpec
@@ -82,9 +83,11 @@ class LocalExecutor:
 
     DEFAULT_SHM_SIZE = '16g'
 
-    def __init__(self, work_dir: str, keep_work_dir: bool = False, docker_cmd: str = 'docker',
+    def __init__(self, work_dir: str, keep_work_dir: bool = False,
+                 docker_cmd: str = 'docker',
                  shm_size: str | None = None):
-        """Initialize the executor with a work directory, cleanup preference, and container runtime command."""
+        """Initialize the executor with a work directory, cleanup preference,
+        and container runtime command."""
         self._work_dir = work_dir
         self._keep_work_dir = keep_work_dir
         self._docker_cmd = docker_cmd
@@ -99,14 +102,22 @@ class LocalExecutor:
             return self._available_gpus
         try:
             result = subprocess.run(
-                ['nvidia-smi', '--query-gpu=index', '--format=csv,noheader'],
+                ['nvidia-smi', '--query-gpu=index',
+                 '--format=csv,noheader'],
                 capture_output=True, text=True, timeout=10,
+                check=False,
             )
             if result.returncode == 0:
-                gpu_indices = [line.strip() for line in result.stdout.strip().splitlines() if line.strip()]
+                gpu_indices = [
+                    line.strip()
+                    for line in result.stdout.strip().splitlines()
+                    if line.strip()
+                ]
                 self._available_gpus = len(gpu_indices)
             else:
-                logger.warning('nvidia-smi failed (exit %d) — assuming 0 GPUs available', result.returncode)
+                logger.warning(
+                    'nvidia-smi failed (exit %d) — assuming 0 GPUs available',
+                    result.returncode)
                 self._available_gpus = 0
         except FileNotFoundError:
             logger.warning('nvidia-smi not found — assuming 0 GPUs available')
@@ -163,8 +174,9 @@ class LocalExecutor:
 
         unexecuted = set(self._task_nodes.keys()) - set(self._results.keys())
         if unexecuted:
-            logger.error('Workflow "%s" stalled — tasks could not be scheduled (possible cycle): %s',
-                         spec.name, ', '.join(sorted(unexecuted)))
+            logger.error(
+                'Workflow "%s" stalled — tasks not schedulable (possible cycle): %s',
+                spec.name, ', '.join(sorted(unexecuted)))
             return False
 
         failed = [name for name, r in self._results.items() if r.exit_code != 0]
@@ -200,7 +212,8 @@ class LocalExecutor:
             return json.load(f)
 
     def _restore_completed_tasks(self, from_step: str | None = None):
-        """Reload completed tasks from a previous run, optionally invalidating from a given step onward."""
+        """Reload completed tasks from a previous run, optionally
+        invalidating from a given step onward."""
         state = self._load_state()
         if state is None:
             logger.info('No previous state found — starting from scratch')
@@ -245,7 +258,8 @@ class LocalExecutor:
         return [task_module.TaskGroupSpec(name=t.name, tasks=[t]) for t in spec.tasks]
 
     def _build_dag(self, spec: workflow_module.WorkflowSpec):
-        """Construct the internal DAG of TaskNodes from the workflow spec's tasks and input dependencies."""
+        """Construct the internal DAG of TaskNodes from the workflow spec's
+        tasks and input dependencies."""
         self._task_nodes.clear()
         task_to_group: Dict[str, str] = {}
 
@@ -265,12 +279,14 @@ class LocalExecutor:
                         upstream_task = input_source.task
                         if upstream_task not in self._task_nodes:
                             raise ValueError(
-                                f'Task "{task_spec.name}" depends on unknown task "{upstream_task}"')
+                                f'Task "{task_spec.name}" depends on '
+                                f'unknown task "{upstream_task}"')
                         self._task_nodes[task_spec.name].upstream.add(upstream_task)
                         self._task_nodes[upstream_task].downstream.add(task_spec.name)
 
     def _validate_for_local(self, spec: workflow_module.WorkflowSpec):
-        """Raise ValueError if the spec uses features unsupported in local mode (datasets, URLs, credentials, etc.)."""
+        """Raise ValueError if the spec uses features unsupported
+        in local mode (datasets, URLs, credentials, etc.)."""
         unsupported_features = []
         for group in self._groups(spec):
             for task_spec in group.tasks:
@@ -283,7 +299,11 @@ class LocalExecutor:
                             f'Task "{task_spec.name}": URL inputs require network/storage access')
 
                 for output in task_spec.outputs:
-                    if isinstance(output, (task_module.DatasetInputOutput, task_module.URLInputOutput)):
+                    unsupported_output = (
+                        task_module.DatasetInputOutput,
+                        task_module.URLInputOutput,
+                    )
+                    if isinstance(output, unsupported_output):
                         unsupported_features.append(
                             f'Task "{task_spec.name}": dataset/URL outputs require object storage')
 
@@ -301,7 +321,8 @@ class LocalExecutor:
 
                 if task_spec.privileged:
                     unsupported_features.append(
-                        f'Task "{task_spec.name}": privileged containers are not supported in local mode')
+                        f'Task "{task_spec.name}": privileged containers '
+                        f'are not supported in local mode')
 
                 if task_spec.hostNetwork:
                     unsupported_features.append(
@@ -353,7 +374,8 @@ class LocalExecutor:
         return 0
 
     def _run_task(self, node: TaskNode, spec: workflow_module.WorkflowSpec) -> TaskResult:
-        """Execute a single task as a Docker container, mounting inputs/outputs/files and returning the result."""
+        """Execute a single task as a Docker container, mounting
+        inputs/outputs/files and returning the result."""
         task_spec = node.spec
         task_dir = os.path.join(self._work_dir, node.name)
         output_dir = os.path.join(task_dir, 'output')
@@ -382,7 +404,8 @@ class LocalExecutor:
             available = self._detect_available_gpus()
             if available == 0:
                 logger.warning(
-                    'Task "%s" requests %d GPU(s) but no GPUs are available — running without GPU support',
+                    'Task "%s" requests %d GPU(s) but no GPUs available'
+                    ' — running without GPU support',
                     node.name, gpu_count)
             elif gpu_count > available:
                 logger.warning(
@@ -391,7 +414,9 @@ class LocalExecutor:
                 docker_args += ['--gpus', f'device={",".join(str(i) for i in range(available))}']
             else:
                 docker_args += ['--gpus', f'device={",".join(str(i) for i in range(gpu_count))}']
-            logger.info('Task "%s" requesting %d GPU(s), using %d', node.name, gpu_count, min(gpu_count, available))
+            logger.info(
+                'Task "%s" requesting %d GPU(s), using %d',
+                node.name, gpu_count, min(gpu_count, available))
 
             docker_args += ['--shm-size', self._shm_size or self.DEFAULT_SHM_SIZE]
         elif self._shm_size:
@@ -433,7 +458,8 @@ class LocalExecutor:
             logger.debug('Docker command: %s', ' '.join(redacted_args))
 
         try:
-            process = subprocess.run(docker_args, capture_output=False)
+            process = subprocess.run(docker_args, capture_output=False,
+                                        check=False)
             return TaskResult(name=node.name, exit_code=process.returncode, output_dir=output_dir)
         except FileNotFoundError:
             logger.error('Docker not found. Is Docker installed and in your PATH?')
@@ -464,7 +490,8 @@ def run_workflow_locally(spec_path: str, work_dir: str | None = None,
                          from_step: str | None = None,
                          docker_cmd: str = 'docker',
                          shm_size: str | None = None) -> bool:
-    """Load a workflow spec from disk and execute it locally via Docker, managing the work directory lifecycle."""
+    """Load a workflow spec from disk and execute it locally via Docker,
+    managing the work directory lifecycle."""
     if (resume or from_step) and work_dir is None:
         raise ValueError(
             '--resume and --from-step require --work-dir pointing to a previous run directory.')
@@ -485,7 +512,10 @@ def run_workflow_locally(spec_path: str, work_dir: str | None = None,
             'then save that output and run it locally.')
 
     created_work_dir = work_dir is None
-    effective_work_dir: str = work_dir if work_dir is not None else tempfile.mkdtemp(prefix='osmo-local-')
+    effective_work_dir: str = (
+        work_dir if work_dir is not None
+        else tempfile.mkdtemp(prefix='osmo-local-')
+    )
     if created_work_dir:
         logger.info('Using temporary work directory: %s', effective_work_dir)
 
