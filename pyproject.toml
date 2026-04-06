@@ -1,0 +1,44 @@
+[build-system]
+requires = ["setuptools>=64"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "nvidia-osmo"
+version = "0.1.0"
+requires-python = ">=3.10"
+dependencies = [
+    "pydantic>=1.10,<2",
+    "pyyaml>=6.0",
+    "requests>=2.28",
+    "urllib3>=1.26",
+    "typing_extensions>=4.0",
+    "boto3>=1.26",
+    "botocore>=1.29",
+    "mypy-boto3-iam>=1.26",
+    "mypy-boto3-s3>=1.26",
+    "mypy-boto3-sts>=1.26",
+    "azure-storage-blob>=12.14",
+    "azure-identity>=1.12",
+    "psycopg2-binary>=2.9",
+    "pyjwt>=2.6",
+    "jwcrypto>=1.5",
+    "jinja2>=3.1",
+    "pytz>=2023.3",
+    "texttable>=1.6",
+    "tqdm>=4.64",
+    "aiofiles>=23.0",
+    "kombu>=5.2",
+    "redis>=4.4",
+    "kubernetes>=24.2",
+    "fastapi>=0.100",
+    "slack_sdk>=3.20",
+    "shtab>=1.5",
+]
+
+[project.scripts]
+osmo = "src.cli.cli:main"
+
+[tool.setuptools.packages.find]
+include = ["src*"]
+exclude = ["src.ui*", "src.tests*"]
+namespaces = true

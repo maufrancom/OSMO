@@ -16,6 +16,7 @@ limitations under the License.
 SPDX-License-Identifier: Apache-2.0
 """
 
+import copy
 import os
 import re
 from typing import Any, Dict, FrozenSet, List
@@ -153,7 +154,7 @@ def _expand_task_refs(tasks: List[Any],
         if not isinstance(value, dict):
             expanded.append(item)
             continue
-        task_dict = dict(value)
+        task_dict = copy.deepcopy(value)
         if 'name' not in task_dict:
             task_dict['name'] = ref_path.rsplit('.', 1)[-1]
         expanded.append(task_dict)
