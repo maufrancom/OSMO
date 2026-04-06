@@ -75,6 +75,7 @@ osmo_py_library(
         "//src/lib/utils:version",
         "//src/lib/utils:workflow",
         "//src/utils:local_executor",
+        "//src/utils:spec_includes",
     ],
 )
 

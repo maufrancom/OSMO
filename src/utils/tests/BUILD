@@ -35,6 +35,7 @@ osmo_py_test(
     name = "test_local_executor",
     srcs = ["test_local_executor.py"],
     deps = [
+        "//src/cli:cli_lib",
         "//src/utils:local_executor",
     ],
     data = [

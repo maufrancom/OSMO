@@ -48,6 +48,7 @@ from src.lib import rsync
 from src.lib.data import storage
 from src.lib.utils import (client, common, osmo_errors, paths, port_forward, priority as wf_priority,
                         validation, workflow as workflow_utils)
+from src.utils import spec_includes
 
 
 INTERACTIVE_COMMANDS = ['bash', 'sh', 'zsh', 'fish', 'tcsh', 'csh', 'ksh']
@@ -588,8 +589,11 @@ def parse_file_for_template(workflow_contents: str, set_variables: List[str],
 
 def _load_wf_file(workflow_path: str, set_variables: List[str],
                   set_string_variables: List[str]) -> TemplateData:
-    with open(workflow_path, 'r', encoding='utf-8') as file:
+    abs_path = os.path.abspath(workflow_path)
+    with open(abs_path, 'r', encoding='utf-8') as file:
         full_file_text = file.read()
+    full_file_text = spec_includes.resolve_includes(
+        full_file_text, os.path.dirname(abs_path), source_path=abs_path)
     return parse_file_for_template(full_file_text, set_variables, set_string_variables)
 
 

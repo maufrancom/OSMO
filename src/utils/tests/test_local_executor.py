@@ -1256,6 +1256,200 @@ class TestCookbookSpecValidation(unittest.TestCase):
         self.assertIn('Hello from OSMO!', resolved)
 
 
+class TestComposeCommand(unittest.TestCase):
+    """Verify ``osmo local compose`` resolves includes and default-values."""
+
+    def setUp(self):
+        self.test_dir = tempfile.mkdtemp()
+
+    def tearDown(self):
+        shutil.rmtree(self.test_dir, ignore_errors=True)
+
+    def _write_file(self, name: str, content: str) -> str:
+        path = os.path.join(self.test_dir, name)
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        with open(path, 'w', encoding='utf-8') as f:
+            f.write(textwrap.dedent(content))
+        return path
+
+    def test_compose_resolves_includes_and_defaults(self):
+        """Compose flattens includes and substitutes default-values variables."""
+        self._write_file('base.yaml', '''\
+            workflow:
+              resources:
+                default:
+                  cpu: 4
+        ''')
+        main_path = self._write_file('main.yaml', '''\
+            includes:
+              - base.yaml
+            workflow:
+              name: "{{experiment}}"
+              tasks:
+              - name: train
+                image: ubuntu:24.04
+                command: ["echo", "hi"]
+            default-values:
+              experiment: my-run
+        ''')
+
+        abs_path = os.path.abspath(main_path)
+        with open(abs_path, encoding='utf-8') as f:
+            spec_text = f.read()
+
+        spec_text = spec_includes.resolve_includes(
+            spec_text, os.path.dirname(abs_path), source_path=abs_path)
+        spec_text = spec_includes.resolve_default_values(spec_text)
+
+        parsed = yaml.safe_load(spec_text)
+        self.assertNotIn('includes', parsed)
+        self.assertNotIn('default-values', parsed)
+        self.assertEqual(parsed['workflow']['name'], 'my-run')
+        self.assertEqual(parsed['workflow']['resources']['default']['cpu'], 4)
+
+    def test_compose_writes_output_file(self):
+        """Compose with -o writes the flat spec to the given path."""
+        main_path = self._write_file('spec.yaml', '''\
+            workflow:
+              name: simple
+              tasks:
+              - name: hello
+                image: alpine:3.18
+                command: ["echo"]
+            default-values:
+              unused_var: value
+        ''')
+        output_path = os.path.join(self.test_dir, 'composed.yaml')
+
+        abs_path = os.path.abspath(main_path)
+        with open(abs_path, encoding='utf-8') as f:
+            spec_text = f.read()
+        spec_text = spec_includes.resolve_includes(
+            spec_text, os.path.dirname(abs_path), source_path=abs_path)
+        spec_text = spec_includes.resolve_default_values(spec_text)
+
+        with open(output_path, 'w', encoding='utf-8') as f:
+            f.write(spec_text)
+
+        with open(output_path, encoding='utf-8') as f:
+            composed = yaml.safe_load(f.read())
+        self.assertNotIn('default-values', composed)
+        self.assertEqual(composed['workflow']['name'], 'simple')
+
+    def test_compose_result_is_submittable(self):
+        """The composed spec has no includes or default-values and is valid YAML."""
+        self._write_file('shared.yaml', '''\
+            workflow:
+              resources:
+                default:
+                  cpu: 2
+                  memory: 4Gi
+            default-values:
+              base_image: ubuntu:24.04
+        ''')
+        main_path = self._write_file('pipeline.yaml', '''\
+            includes:
+              - shared.yaml
+            workflow:
+              name: pipeline
+              tasks:
+              - name: step1
+                image: "{base_image}"
+                command: ["echo", "hello"]
+            default-values:
+              base_image: nvidia/cuda:12.0-base
+        ''')
+
+        abs_path = os.path.abspath(main_path)
+        with open(abs_path, encoding='utf-8') as f:
+            spec_text = f.read()
+        spec_text = spec_includes.resolve_includes(
+            spec_text, os.path.dirname(abs_path), source_path=abs_path)
+        spec_text = spec_includes.resolve_default_values(spec_text)
+
+        parsed = yaml.safe_load(spec_text)
+        self.assertNotIn('includes', parsed)
+        self.assertNotIn('default-values', parsed)
+        self.assertEqual(parsed['workflow']['name'], 'pipeline')
+        self.assertEqual(parsed['workflow']['tasks'][0]['image'],
+                         'nvidia/cuda:12.0-base')
+        self.assertEqual(parsed['workflow']['resources']['default']['cpu'], 2)
+
+
+class TestSubmitIncludesResolution(unittest.TestCase):
+    """Verify that _load_wf_file resolves includes before sending to server."""
+
+    def setUp(self):
+        self.test_dir = tempfile.mkdtemp()
+
+    def tearDown(self):
+        shutil.rmtree(self.test_dir, ignore_errors=True)
+
+    def _write_file(self, name: str, content: str) -> str:
+        path = os.path.join(self.test_dir, name)
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        with open(path, 'w', encoding='utf-8') as f:
+            f.write(textwrap.dedent(content))
+        return path
+
+    def test_load_wf_file_flattens_includes(self):
+        """_load_wf_file merges included files so the server receives a flat spec."""
+        from src.cli.workflow import _load_wf_file
+
+        self._write_file('base.yaml', '''\
+            workflow:
+              resources:
+                default:
+                  cpu: 8
+        ''')
+        main_path = self._write_file('main.yaml', '''\
+            includes:
+              - base.yaml
+            workflow:
+              name: test-wf
+              tasks:
+              - name: task1
+                image: alpine:3.18
+                command: ["echo"]
+        ''')
+
+        template_data = _load_wf_file(main_path, [], [])
+        parsed = yaml.safe_load(template_data.file)
+
+        self.assertNotIn('includes', parsed)
+        self.assertEqual(parsed['workflow']['resources']['default']['cpu'], 8)
+        self.assertEqual(parsed['workflow']['name'], 'test-wf')
+
+    def test_load_wf_file_preserves_template_markers(self):
+        """Includes are resolved but Jinja/default-values markers are preserved for the server."""
+        from src.cli.workflow import _load_wf_file
+
+        self._write_file('base.yaml', '''\
+            workflow:
+              resources:
+                default:
+                  cpu: 4
+        ''')
+        main_path = self._write_file('main.yaml', '''\
+            includes:
+              - base.yaml
+            workflow:
+              name: "{{experiment}}"
+              tasks:
+              - name: task1
+                image: alpine:3.18
+                command: ["echo"]
+            default-values:
+              experiment: my-exp
+        ''')
+
+        template_data = _load_wf_file(main_path, [], [])
+        self.assertTrue(template_data.is_templated)
+        self.assertNotIn('includes', template_data.file)
+        self.assertIn('default-values', template_data.file)
+        self.assertIn('{{experiment}}', template_data.file)
+
+
 class TestRunWorkflowLocallyErrors(unittest.TestCase):
     """Test error handling in run_workflow_locally() that does not require Docker."""
 

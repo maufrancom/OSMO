@@ -18,15 +18,16 @@ SPDX-License-Identifier: Apache-2.0
 """
 
 import argparse
+import os
 import sys
 
 import shtab
 
-from src.utils import local_executor
+from src.utils import local_executor, spec_includes
 
 
 def setup_parser(parser: argparse._SubParsersAction):
-    """Register the 'local' subcommand and its nested 'run' action with the CLI argument parser."""
+    """Register the 'local' subcommand and its nested actions with the CLI argument parser."""
     local_parser = parser.add_parser(
         'local',
         help='Run workflows locally using Docker (no Kubernetes cluster required).')
@@ -78,6 +79,21 @@ def setup_parser(parser: argparse._SubParsersAction):
              'PyTorch DataLoader workers require large shared memory.')
     run_parser.set_defaults(func=_run_local)
 
+    compose_parser = subparsers.add_parser(
+        'compose',
+        help='Resolve includes and default-values, then print the flat workflow spec.')
+    compose_parser.add_argument(
+        '-f', '--file',
+        required=True,
+        dest='workflow_file',
+        help='Path to the workflow YAML spec file.').complete = shtab.FILE
+    compose_parser.add_argument(
+        '-o', '--output',
+        dest='output_file',
+        default=None,
+        help='Write the composed spec to a file instead of stdout.').complete = shtab.FILE
+    compose_parser.set_defaults(func=_compose)
+
 
 def _run_local(service_client, args: argparse.Namespace):
     """Execute a workflow locally via Docker using the parsed CLI arguments."""
@@ -97,3 +113,25 @@ def _run_local(service_client, args: argparse.Namespace):
 
     if not success:
         sys.exit(1)
+
+
+def _compose(service_client, args: argparse.Namespace):
+    """Resolve includes and default-values, then output the flat spec."""
+    try:
+        abs_path = os.path.abspath(args.workflow_file)
+        with open(abs_path, encoding='utf-8') as f:
+            spec_text = f.read()
+
+        spec_text = spec_includes.resolve_includes(
+            spec_text, os.path.dirname(abs_path), source_path=abs_path)
+        spec_text = spec_includes.resolve_default_values(spec_text)
+    except (ValueError, FileNotFoundError, PermissionError) as error:
+        print(f'Error: {error}', file=sys.stderr)
+        sys.exit(1)
+
+    if args.output_file:
+        with open(args.output_file, 'w', encoding='utf-8') as f:
+            f.write(spec_text)
+        print(f'Composed spec written to {args.output_file}', file=sys.stderr)
+    else:
+        print(spec_text, end='')
