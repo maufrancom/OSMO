@@ -95,15 +95,30 @@ class LocalExecutor:
 
     DEFAULT_SHM_SIZE = '16g'
 
+    _ENTRYPOINT_COMMANDS = frozenset({
+        'bash', 'sh', 'dash', 'zsh',
+        'python', 'python3', 'python3.10', 'python3.11', 'python3.12',
+        'perl', 'ruby', 'node',
+    })
+
     def __init__(self, work_dir: str, keep_work_dir: bool = False,
                  docker_cmd: str = 'docker',
-                 shm_size: str | None = None):
+                 shm_size: str | None = None,
+                 extra_volumes: List[str] | None = None):
         """Initialize the executor with a work directory, cleanup preference,
-        and container runtime command."""
+        and container runtime command.
+
+        Args:
+            extra_volumes: Additional Docker volume mounts (``host:container``
+                strings) added to every task.  Useful for making host paths
+                (e.g. repository root, credential directories) visible inside
+                containers.
+        """
         self._work_dir = os.path.abspath(work_dir)
         self._keep_work_dir = keep_work_dir
         self._docker_cmd = docker_cmd
         self._shm_size = shm_size
+        self._extra_volumes = list(extra_volumes) if extra_volumes else []
         self._task_nodes: Dict[str, TaskNode] = {}
         self._results: Dict[str, TaskResult] = {}
         self._available_gpus: int | None = None
@@ -325,6 +340,7 @@ class LocalExecutor:
                 f.write(resolved_contents)
             volumes.append(f'{host_path}:{file_spec.path}:ro')
 
+        volumes.extend(self._extra_volumes)
         service['volumes'] = volumes
 
         resolved_command = [
@@ -335,10 +351,16 @@ class LocalExecutor:
             for a in task_spec.args]
 
         if resolved_command:
-            service['entrypoint'] = [resolved_command[0]]
-            rest = resolved_command[1:] + resolved_args
+            first_cmd = resolved_command[0]
+            if first_cmd.startswith('/') or first_cmd in self._ENTRYPOINT_COMMANDS:
+                service['entrypoint'] = [first_cmd]
+                rest = resolved_command[1:] + resolved_args
+            else:
+                rest = resolved_command + resolved_args
             if rest:
                 service['command'] = rest
+        elif resolved_args:
+            service['command'] = resolved_args
 
         if task_spec.environment:
             service['environment'] = {
@@ -358,7 +380,7 @@ class LocalExecutor:
                             'devices': [{
                                 'driver': 'nvidia',
                                 'count': effective_count,
-                                'capabilities': [['gpu']],
+                                'capabilities': ['gpu'],
                             }]
                         }
                     }
@@ -562,6 +584,16 @@ class LocalExecutor:
                         self._task_nodes[task_spec.name].upstream.add(upstream_task)
                         self._task_nodes[upstream_task].downstream.add(task_spec.name)
 
+        # For flat task lists (no explicit groups), add implicit sequential
+        # dependencies so each task waits for the previous one — matching
+        # on-cluster behavior where tasks in a list run sequentially.
+        if not spec.groups and spec.tasks:
+            task_names = [t.name for t in spec.tasks]
+            for i in range(1, len(task_names)):
+                prev, curr = task_names[i - 1], task_names[i]
+                self._task_nodes[curr].upstream.add(prev)
+                self._task_nodes[prev].downstream.add(curr)
+
     def _validate_for_local(self, spec: workflow_module.WorkflowSpec):
         """Raise ValueError if the spec uses features unsupported
         in local mode (datasets, URLs, credentials, etc.)."""
@@ -663,7 +695,8 @@ def run_workflow_locally(spec_path: str, work_dir: str | None = None,
                          resume: bool = False,
                          from_step: str | None = None,
                          docker_cmd: str = 'docker',
-                         shm_size: str | None = None) -> bool:
+                         shm_size: str | None = None,
+                         extra_volumes: List[str] | None = None) -> bool:
     """Load a workflow spec from disk and execute it locally via Docker Compose,
     managing the work directory lifecycle."""
     if (resume or from_step) and work_dir is None:
@@ -696,7 +729,8 @@ def run_workflow_locally(spec_path: str, work_dir: str | None = None,
         logger.info('Using temporary work directory: %s', effective_work_dir)
 
     executor = LocalExecutor(work_dir=effective_work_dir, keep_work_dir=keep_work_dir,
-                              docker_cmd=docker_cmd, shm_size=shm_size)
+                              docker_cmd=docker_cmd, shm_size=shm_size,
+                              extra_volumes=extra_volumes)
     spec = executor.load_spec(spec_text)
     success = executor.execute(spec, resume=resume or from_step is not None,
                                from_step=from_step)

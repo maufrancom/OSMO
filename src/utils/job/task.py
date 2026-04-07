@@ -598,7 +598,7 @@ class TaskSpec(pydantic.BaseModel, extra=pydantic.Extra.forbid):
     """ Represents the container spec in a task spec. """
     name: task_common.NamePattern
     image: str
-    command: List[str]
+    command: List[str] = []
     inputs: List[InputType] = []
     outputs: List[OutputType] = []
     kpis: List[TaskKPI] = []
@@ -663,12 +663,10 @@ class TaskSpec(pydantic.BaseModel, extra=pydantic.Extra.forbid):
         """
         Validates command. Returns the value of command if valid.
 
-        Raises:
-            ValueError: Containers fails validation.
+        An empty command list means "use the container image's default
+        ENTRYPOINT", which is a valid and common pattern (e.g. NRE images
+        with pycena_run as the built-in entrypoint).
         """
-        name = values.get('name', '')
-        if not command:
-            raise ValueError(f'Container {name} should have at least one command.')
         return command
 
     @pydantic.validator('files')
