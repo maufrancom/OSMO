@@ -416,6 +416,14 @@ nvkind cluster create --config-template=kind-osmo-cluster-config.yaml || print_w
 print_status "Waiting for cluster to be ready..."
 kubectl wait --for=condition=Ready nodes --all --timeout=300s
 
+# Grant cluster-admin to kubernetes-admin so Helm can manage all resources.
+# nvkind may not bind this automatically on all providers (e.g. Shadecloud).
+print_status "Granting cluster-admin to kubernetes-admin..."
+kubectl create clusterrolebinding kubernetes-admin-cluster-admin \
+  --clusterrole=cluster-admin \
+  --user=kubernetes-admin \
+  2>/dev/null || print_warning "ClusterRoleBinding already exists, continuing..."
+
 # Verify GPUs are available
 print_status "Verifying GPU availability..."
 nvkind cluster print-gpus || print_warning "Could not verify GPUs, but continuing..."
@@ -526,7 +534,75 @@ fi
 # ============================================
 print_status "Logging in to OSMO..."
 
-osmo login http://localhost:8000 --method=dev --username=testuser
+OSMO_API="http://localhost:8000"
+osmo login "${OSMO_API}" --method=dev --username=testuser
+
+# ============================================
+# Step 9: Configure Shared Memory Pod Template
+# ============================================
+print_status "Adding shared_memory pod template for /dev/shm..."
+
+# Create the shared_memory pod template
+curl -sf -X PUT "${OSMO_API}/api/configs/pod_template/shared_memory" \
+  -H "Content-Type: application/json" \
+  -H "x-osmo-user: testuser" \
+  -d '{
+    "configs": {
+      "spec": {
+        "volumes": [
+          {
+            "name": "shm",
+            "emptyDir": {
+              "medium": "Memory",
+              "sizeLimit": "64Gi"
+            }
+          }
+        ],
+        "containers": [
+          {
+            "name": "{{USER_CONTAINER_NAME}}",
+            "volumeMounts": [
+              {
+                "name": "shm",
+                "mountPath": "/dev/shm"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    "description": "Add shared_memory pod template for /dev/shm mounting"
+  }'
+
+print_status "shared_memory pod template created"
+
+# Add shared_memory to the default pool's common_pod_template list
+print_status "Adding shared_memory to default pool..."
+
+CURRENT_COMMON_POD_TEMPLATE=$(
+  curl -sf "${OSMO_API}/api/configs/pool/default" \
+    -H "x-osmo-user: testuser" \
+  | python3 -c '
+import json, sys
+data = json.load(sys.stdin)
+templates = data.get("common_pod_template") or []
+if "shared_memory" not in templates:
+    templates.append("shared_memory")
+print(json.dumps(templates))
+'
+)
+
+curl -sf -X PATCH "${OSMO_API}/api/configs/pool/default" \
+  -H "Content-Type: application/json" \
+  -H "x-osmo-user: testuser" \
+  -d "{
+    \"configs_dict\": {
+      \"common_pod_template\": ${CURRENT_COMMON_POD_TEMPLATE}
+    },
+    \"description\": \"Add shared_memory pod template to default pool\"
+  }"
+
+print_status "Default pool updated with shared_memory pod template"
 
 # ============================================
 # Step 9: Set Data Credential
